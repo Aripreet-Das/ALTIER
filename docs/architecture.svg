@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="660" viewBox="0 0 1200 660" role="img" aria-label="ASTRA pipeline: photo, measurement, profile, verdict, memory">
+  <defs>
+    <style>
+      .bg     { fill: #EAE1CF; }
+      .card   { fill: #F7F1E4; stroke: #D6CBB4; stroke-width: 1.2; }
+      .card2  { fill: #F3ECDD; stroke: #D6CBB4; stroke-width: 1.2; }
+      .ink    { fill: #2C3835; }
+      .stone  { fill: #5B655F; }
+      .faint  { fill: #8A938C; }
+      .sea    { fill: #3E635E; }
+      .rule   { stroke: #C7B592; stroke-width: 1; }
+      .arrow  { stroke: #3E635E; stroke-width: 1.6; fill: none; }
+      .loop   { stroke: #6E9A94; stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+      .t      { font-family: Georgia, 'Times New Roman', serif; }
+      .kicker { font-family: Georgia, serif; font-size: 12px; letter-spacing: 3.4px; text-transform: uppercase; }
+      .h1     { font-family: Georgia, serif; font-size: 34px; letter-spacing: 1px; }
+      .step   { font-family: Georgia, serif; font-size: 10.5px; letter-spacing: 2.6px; text-transform: uppercase; }
+      .body   { font-family: Georgia, serif; font-size: 13px; }
+      .small  { font-family: Georgia, serif; font-size: 11.5px; }
+      .tag    { font-family: Georgia, serif; font-size: 10px; letter-spacing: 1.2px; }
+      .mono   { font-family: 'SF Mono', Menlo, monospace; font-size: 11px; }
+    </style>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3E635E"/>
+    </marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6E9A94"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1200" height="660"/>
+
+  <!-- header -->
+  <text class="kicker sea" x="60" y="62">ASTRA</text>
+  <text class="h1 ink" x="60" y="100">A stylist that shows its work.</text>
+  <text class="body stone" x="60" y="126">One measured profile — colouring, body, closet, taste — and every claim labelled for what it is.</text>
+  <line class="rule" x1="60" y1="146" x2="1140" y2="146"/>
+
+  <!-- 1 PHOTO -->
+  <text class="step sea" x="60" y="182">01 · PHOTO</text>
+  <rect class="card" x="60" y="196" width="176" height="132" rx="10"/>
+  <text class="body ink" x="76" y="224">Selfie + full body</text>
+  <text class="small stone" x="76" y="246">capture coach</text>
+  <text class="small faint" x="76" y="264">angle · light · still</text>
+  <text class="small stone" x="76" y="288">quality gate</text>
+  <text class="small faint" x="76" y="306">0–100, 7 components</text>
+
+  <!-- 2 MEASURE -->
+  <text class="step sea" x="292" y="182">02 · MEASURE</text>
+  <rect class="card" x="292" y="196" width="264" height="132" rx="10"/>
+  <text class="small ink" x="308" y="222">Face · SCRFD → 478 mesh → shape</text>
+  <text class="small ink" x="308" y="246">Colour · CIELAB hue → ITA° → L*</text>
+  <text class="small ink" x="308" y="270">Body · pose ratios → 5 shapes</text>
+  <line class="rule" x1="308" y1="284" x2="540" y2="284"/>
+  <text class="small faint" x="308" y="304">local only — MediaPipe, ONNX, SigLIP</text>
+  <text class="small faint" x="308" y="320">no photo leaves the machine</text>
+
+  <!-- 3 PROFILE -->
+  <text class="step sea" x="612" y="182">03 · HER PROFILE</text>
+  <rect class="card2" x="612" y="196" width="252" height="132" rx="10"/>
+  <text class="small ink" x="628" y="222">colouring · body · closet</text>
+  <text class="small ink" x="628" y="242">taste vector · size memory</text>
+  <text class="small ink" x="628" y="262">rule confidence</text>
+  <line class="rule" x1="628" y1="276" x2="848" y2="276"/>
+  <text class="tag faint" x="628" y="300">measured</text>
+  <text class="tag faint" x="704" y="300">convention</text>
+  <text class="tag faint" x="786" y="300">noisy estimate</text>
+
+  <!-- 4 VERDICT -->
+  <text class="step sea" x="920" y="182">04 · VERDICT</text>
+  <rect class="card" x="920" y="196" width="220" height="132" rx="10"/>
+  <text class="small ink" x="936" y="222">structure · vibe · makeup</text>
+  <text class="small ink" x="936" y="242">pairing · budget · longevity</text>
+  <text class="small ink" x="936" y="262">trust · reputation</text>
+  <line class="rule" x1="936" y1="276" x2="1124" y2="276"/>
+  <text class="body sea" x="936" y="304">buy · caution · skip</text>
+
+  <!-- arrows -->
+  <line class="arrow" x1="236" y1="262" x2="286" y2="262" marker-end="url(#a)"/>
+  <line class="arrow" x1="556" y1="262" x2="606" y2="262" marker-end="url(#a)"/>
+  <line class="arrow" x1="864" y1="262" x2="914" y2="262" marker-end="url(#a)"/>
+
+  <!-- lower band: inputs and memory -->
+  <rect class="card2" x="60" y="380" width="1080" height="150" rx="10"/>
+
+  <text class="step sea" x="84" y="412">A PRODUCT COMES IN</text>
+  <text class="small ink" x="84" y="440">Chrome extension on Myntra · Amazon</text>
+  <text class="small ink" x="84" y="460">Nykaa · Ajio — or live search</text>
+  <text class="small faint" x="84" y="486">title · fabric · specs · reviews</text>
+  <text class="small faint" x="84" y="504">selected shade swatch</text>
+
+  <line class="rule" x1="400" y1="404" x2="400" y2="516"/>
+
+  <text class="step sea" x="428" y="412">05 · MEMORY</text>
+  <text class="small ink" x="428" y="440">“did it fit” → her own size hint</text>
+  <text class="small ink" x="428" y="460">brand swatches → nearest shade by ΔE</text>
+  <text class="small ink" x="428" y="480">her feedback → rule confidence</text>
+  <text class="small faint" x="428" y="506">the data moat, at one-person scale</text>
+
+  <line class="rule" x1="760" y1="404" x2="760" y2="516"/>
+
+  <text class="step sea" x="788" y="412">THE MODEL</text>
+  <text class="small ink" x="788" y="440">understands the ask</text>
+  <text class="small ink" x="788" y="460">calls the tool</text>
+  <text class="small faint" x="788" y="486">every judgement is made by</text>
+  <text class="small faint" x="788" y="504">the deterministic engines</text>
+
+  <!-- feedback loop -->
+  <path class="loop" d="M 1130 328 L 1130 352 Q 1130 362 1120 362 L 748 362 Q 738 362 738 352 L 738 334" marker-end="url(#b)"/>
+  <text class="tag faint" x="900" y="354">feedback moves the numbers</text>
+
+  <!-- footer -->
+  <line class="rule" x1="60" y1="574" x2="1140" y2="574"/>
+  <text class="small stone" x="60" y="604">Measured: CIELAB · ITA° (Chardon 1991) · L* · CIE76 ΔE</text>
+  <text class="small stone" x="60" y="624">Convention: warm/cool cuts · palette regions · styling rules</text>
+  <text class="small faint" x="1140" y="624" text-anchor="end">github.com/Srishti39-sudo/ALTIER</text>
+</svg>

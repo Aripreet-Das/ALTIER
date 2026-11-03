@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ASTRA — social preview</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    width:1280px; height:640px; overflow:hidden;
+    background:#2C3835; color:#EAE1CF;
+    font-family:'EB Garamond', Georgia, serif;
+    display:flex; flex-direction:column; justify-content:center;
+    padding:72px 80px; position:relative;
+  }
+  .grid {
+    position:absolute; inset:0;
+    background-image:linear-gradient(#35433f 1px, transparent 1px),linear-gradient(90deg,#35433f 1px, transparent 1px);
+    background-size:64px 64px; opacity:.35;
+  }
+  .kicker { font-size:15px; letter-spacing:9px; text-transform:uppercase; color:#8FB3A9; position:relative; }
+  h1 { font-size:74px; font-weight:500; line-height:1.02; letter-spacing:-.5px; margin:22px 0 0; position:relative; }
+  h1 em { color:#D9C9AC; font-style:italic; }
+  .sub { font-size:26px; color:#C7B592; margin-top:20px; position:relative; max-width:900px; line-height:1.35; }
+  .chips { display:flex; gap:12px; margin-top:40px; position:relative; flex-wrap:wrap; }
+  .chip {
+    font-size:14px; letter-spacing:2.6px; text-transform:uppercase;
+    border:1px solid #4E625C; border-radius:999px; padding:9px 18px; color:#B8C7C1;
+  }
+  .chip.me { border-color:#6E9A94; color:#8FB3A9; }
+  .foot {
+    position:absolute; left:80px; right:80px; bottom:56px;
+    display:flex; justify-content:space-between; align-items:baseline;
+    border-top:1px solid #44544F; padding-top:20px;
+  }
+  .foot span { font-size:17px; color:#8A938C; letter-spacing:.6px; }
+  .foot b { font-weight:500; color:#D9C9AC; letter-spacing:1px; }
+  .mark { position:absolute; right:80px; top:64px; font-size:13px; letter-spacing:5px; color:#5B655F; }
+</style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="mark">OPEN SOURCE</div>
+  <div class="kicker">ASTRA</div>
+  <h1>A stylist that<br><em>shows its work.</em></h1>
+  <p class="sub">Colouring, body and taste measured from her own photos — and every claim labelled for what it is.</p>
+  <div class="chips">
+    <div class="chip me">Measured</div>
+    <div class="chip">Cut by convention</div>
+    <div class="chip">Convention</div>
+    <div class="chip">Noisy estimate</div>
+  </div>
+  <div class="foot">
+    <span><b>github.com/Srishti39-sudo/ALTIER</b></span>
+    <span>Python · MediaPipe · ONNX · SigLIP · FastAPI</span>
+  </div>
+</body>
+</html>

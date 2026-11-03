@@ -1,0 +1,23 @@
+name: tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  colour:
+    name: colour maths
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # The colour maths is stdlib-only on purpose: sRGB -> CIELAB, ITA, CIELCh and the
+      # inverse. If these fail, every hex the palette engine prints is wrong. Runs in
+      # seconds, so it stays useful rather than something people skip.
+      - name: face-parsing · colorimetry
+        working-directory: face-parsing
+        run: python test_colorimetry.py

@@ -1,0 +1,64 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Python
+venv/
+**/venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Secrets — never commit a real one
+.env
+**/.env
+*.env
+
+# macOS
+.DS_Store
+
+# Logs and pids
+logs/
+**/logs/
+*.log
+*.pid
+
+# Expo / React Native build output
+app/.expo/
+app/dist/
+app/web-build/
+app/expo-env.d.ts
+app/ios/
+app/android/
+*.jks
+*.p8
+*.p12
+*.pem
+*.key
+*.mobileprovision
+
+# Downloaded model weights (each machine fetches its own)
+face-parsing/weights/
+*.onnx
+*.pt
+*.task
+*.tflite
+
+# Per-install data: her profile, the vecdb, the knowledge corpus
+page1/data/
+
+# Sample faces / scratch output that must never be published
+face-parsing/rece*
+face-parsing/*.jpeg
+face-parsing/*.jpg
+face-parsing/*_overlay.png
+face-parsing/*_skin.png
+face-parsing/*_hair.png
+face-parsing/*_grayscale.png
+cv-service/*_mask.png
+
+# Local assistant/tool preferences, not project config
+.claude/
+**/.claude/
