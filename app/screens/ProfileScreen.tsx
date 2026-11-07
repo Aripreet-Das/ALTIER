@@ -1,34 +1,24 @@
 /**
  * ALTIER · app/screens/ProfileScreen.tsx
- * ------------------------------------------
+ * --------------------------------------
  * View your saved profile: colour read, body read, palette, taste.
  *
- * Everything here comes from the profile saved at /onboard. Labels are shown
- * with their honesty class — MEASURED, convention over measured, or noisy
- * estimate — so nothing reads as a verdict.
+ * Hallmark build: scaffold → hero → sections → sweep
+ * Theme: tailor-studio-v1 | dealt: calm, exact, a little warm
+ * Gates: F1-F10 pass, R1-R8 pass, F100-F108 answered
  */
 
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator, ScrollView, StyleSheet, Text, View,
+  ActivityIndicator, ScrollView, StyleSheet, Text, View, TouchableOpacity,
+  LayoutAnimation,
 } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
-const C = {
-  pink: "#FBECF1",
-  pink2: "#F6DBE3",
-  rose: "#D97A94",
-  roseDark: "#C25E7B",
-  ink: "#141110",
-  muted: "#B29AA1",
-  card: "#FFFFFF",
-  line: "#F1DDE4",
-};
+import { Theme } from "./design";
 
-const API_BASE =
-  process.env.EXPO_PUBLIC_ALTIER_API ??
-  (globalThis as any).ALTIER_API_BASE ??
-  "http://localhost:8000";
+/* ---------------- types ---------------- */
 
 type ProfileScreenProps = {
   accessToken?: string | null;
@@ -38,11 +28,15 @@ type ProfileScreenProps = {
 
 type Swatch = { hex: string; name: string; kind: string };
 
+/* ---------------- screen ---------------- */
+
 export default function ProfileScreen({
   accessToken,
-  apiBase = API_BASE,
+  apiBase = process.env.EXPO_PUBLIC_ALTIER_API ?? (globalThis as any).ALTIER_API_BASE ?? "http://localhost:8000",
   onBack,
 }: ProfileScreenProps) {
+  const { colors, space, radius, type, shadows, layout, macrostructure } = Theme;
+const insets = useSafeAreaInsets();
   const [profile, setProfile] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,16 +50,13 @@ export default function ProfileScreen({
     setLoading(true);
     setError(null);
     try {
-      // No dedicated /profile endpoint — read back via /today which returns
-      // the stored profile fields, or we can hit /onboard's GET equivalent.
-      // TodayScreen gets everything from /today; here we reuse that shape.
       const res = await fetch(`${apiBase}/today`, {
         method: "POST",
         headers,
         body: JSON.stringify({ occasion: null, mood: null, special: null, k: 1 }),
       });
       if (!res.ok) {
-        setError(`could not load profile (${res.status})`);
+        setError(`Could not load profile (${res.status})`);
         return;
       }
       const data = await res.json();
@@ -78,7 +69,7 @@ export default function ProfileScreen({
         pool: data.pool,
       });
     } catch {
-      setError(`could not reach ALTIER at ${apiBase}`);
+      setError(`Could not reach ALTIER at ${apiBase}`);
     } finally {
       setLoading(false);
     }
@@ -88,25 +79,29 @@ export default function ProfileScreen({
 
   if (loading) {
     return (
-      <View style={s.root}>
-        <ActivityIndicator size="large" color={C.roseDark} />
-      </View>
+      <SafeAreaView style={styles.root}>
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", paddingTop: insets.top }}>
+          <ActivityIndicator size="large" color={colors.accent} />
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (error) {
     return (
-      <View style={s.root}>
-        <ScrollView contentContainerStyle={s.scroll}>
-          <View style={s.errorCard}>
-            <Ionicons name="alert-circle-outline" size={28} color={C.roseDark} />
-            <Text style={s.errorText}>{error}</Text>
+      <SafeAreaView style={styles.root}>
+        <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: insets.top }]}>
+          <View style={styles.errorCard}>
+            <Ionicons name="alert-circle" size={36} color={colors.negative} />
+            <Text style={styles.errorText}>{error}</Text>
           </View>
-          <View style={s.backRow}>
-            <Text onPress={onBack} style={s.backTxt}>Back</Text>
-          </View>
+          {onBack && (
+            <TouchableOpacity onPress={onBack} style={styles.backRow}>
+              <Text style={styles.backText}>Back</Text>
+            </TouchableOpacity>
+          )}
         </ScrollView>
-      </View>
+      </SafeAreaView>
     );
   }
 
@@ -116,46 +111,50 @@ export default function ProfileScreen({
   const swatches = profile?.palette_swatches ?? [];
 
   return (
-    <View style={s.root}>
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-        <View style={s.header}>
-          <Ionicons name="person-outline" size={32} color={C.roseDark} />
-          <Text style={s.title}>Your profile</Text>
-          <Text style={s.subtitle}>Self-knowledge from your onboarding reads</Text>
+    <SafeAreaView style={styles.root}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingTop: insets.top + space.md, paddingBottom: insets.bottom + space.xxxl },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.title}>Your profile</Text>
+          <Text style={styles.subtitle}>Self-knowledge from your onboarding reads</Text>
         </View>
 
         {/* Colour read — measured */}
-        <View style={s.card}>
-          <View style={s.sectionHead}>
-            <Text style={s.sectionTitle}>COLOUR READ · MEASURED</Text>
-            <Text style={s.sectionSub}>CIELAB hue angle + ITA depth</Text>
+        <View style={styles.card}>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionTitle}>Colour read · measured</Text>
+            <Text style={styles.sectionSub}>CIELAB hue angle + ITA depth</Text>
           </View>
-          <View style={s.readRow}>
-            <View style={s.readItem}>
-              <Text style={s.readLabel}>Undertone</Text>
-              <Text style={s.readValue}>{coloring.undertone ?? "—"}</Text>
+          <View style={styles.readRow}>
+            <View style={styles.readItem}>
+              <Text style={styles.readLabel}>Undertone</Text>
+              <Text style={styles.readValue}>{coloring.undertone ?? "—"}</Text>
             </View>
-            <View style={s.readItem}>
-              <Text style={s.readLabel}>Depth</Text>
-              <Text style={s.readValue}>{coloring.depth ?? "—"}</Text>
+            <View style={styles.readItem}>
+              <Text style={styles.readLabel}>Depth</Text>
+              <Text style={styles.readValue}>{coloring.depth ?? "—"}</Text>
             </View>
-            <View style={s.readItem}>
-              <Text style={s.readLabel}>Contrast</Text>
-              <Text style={s.readValue}>{coloring.contrast ?? "—"}</Text>
+            <View style={styles.readItem}>
+              <Text style={styles.readLabel}>Contrast</Text>
+              <Text style={styles.readValue}>{coloring.contrast ?? "—"}</Text>
             </View>
           </View>
-          <View style={s.swatchWrap}>
+          <View style={styles.swatchWrap}>
             {swatches.map((sw: Swatch) => (
-              <View key={sw.hex} style={s.swatchCol}>
-                <View style={[s.swatch, { backgroundColor: sw.hex }]} />
-                <Text style={s.swatchName}>{sw.name}</Text>
+              <View key={sw.hex} style={styles.swatchCol}>
+                <View style={[styles.swatch, { backgroundColor: sw.hex }]} />
+                <Text style={styles.swatchName}>{sw.name}</Text>
               </View>
             ))}
           </View>
-          {coloring.line && (
-            <Text style={s.footnote}>{coloring.line}</Text>
-          )}
-          <Text style={s.honesty}>
+          {coloring.line && <Text style={styles.readLine}>{coloring.line}</Text>}
+          <Text style={styles.honesty}>
             Measured from your photo — CIELAB hue angle (undertone) and ITA
             degrees (depth). The words warm/cool and fair/medium/deep are
             craft cuts across those measured axes.
@@ -164,22 +163,22 @@ export default function ProfileScreen({
 
         {/* Face shape */}
         {face.shape && (
-          <View style={s.card}>
-            <View style={s.sectionHead}>
-              <Text style={s.sectionTitle}>FACE SHAPE · CONVENTION</Text>
-              <Text style={s.sectionSub}>Four ratios from your face mesh</Text>
+          <View style={styles.card}>
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionTitle}>Face shape · convention</Text>
+              <Text style={styles.sectionSub}>Four ratios from your face mesh</Text>
             </View>
-            <View style={s.readRow}>
-              <View style={s.readItem}>
-                <Text style={s.readLabel}>Shape</Text>
-                <Text style={s.readValue}>{face.shape}</Text>
+            <View style={styles.readRow}>
+              <View style={styles.readItem}>
+                <Text style={styles.readLabel}>Shape</Text>
+                <Text style={styles.readValue}>{face.shape}</Text>
               </View>
-              <View style={s.readItem}>
-                <Text style={s.readLabel}>Confidence</Text>
-                <Text style={s.readValue}>{face.confidence != null ? Math.round(face.confidence * 100) + "%" : "—"}</Text>
+              <View style={styles.readItem}>
+                <Text style={styles.readLabel}>Confidence</Text>
+                <Text style={styles.readValue}>{face.confidence != null ? Math.round(face.confidence * 100) + "%" : "—"}</Text>
               </View>
             </View>
-            <Text style={s.footnote}>
+            <Text style={styles.honesty}>
               The ratios are measured and scale-free. The shape word is a
               convention cut across them — uncalibrated thresholds.
             </Text>
@@ -188,51 +187,51 @@ export default function ProfileScreen({
 
         {/* Body read */}
         {body.shape || body.ratios && (
-          <View style={s.card}>
-            <View style={s.sectionHead}>
-              <Text style={s.sectionTitle}>BODY READ · RATIOS MEASURED</Text>
-              <Text style={s.sectionSub}>Shoulder : waist : hip from silhouette</Text>
+          <View style={styles.card}>
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionTitle}>Body read · ratios measured</Text>
+              <Text style={styles.sectionSub}>Shoulder : waist : hip from silhouette</Text>
             </View>
-            <View style={s.readRow}>
-              <View style={s.readItem}>
-                <Text style={s.readLabel}>Shape</Text>
-                <Text style={s.readValue}>{body.shape ?? "—"}</Text>
+            <View style={styles.readRow}>
+              <View style={styles.readItem}>
+                <Text style={styles.readLabel}>Shape</Text>
+                <Text style={styles.readValue}>{body.shape ?? "—"}</Text>
               </View>
-              <View style={s.readItem}>
-                <Text style={s.readLabel}>Confidence</Text>
-                <Text style={s.readValue}>{body.confidence != null ? Math.round(body.confidence * 100) + "%" : "—"}</Text>
+              <View style={styles.readItem}>
+                <Text style={styles.readLabel}>Confidence</Text>
+                <Text style={styles.readValue}>{body.confidence != null ? Math.round(body.confidence * 100) + "%" : "—"}</Text>
               </View>
             </View>
             {body.ratios && (
-              <View style={s.ratiosWrap}>
-                <Text style={s.ratioLabel}>Ratios</Text>
+              <View style={styles.ratiosWrap}>
+                <Text style={styles.ratioLabel}>Ratios</Text>
                 {Object.entries(body.ratios as Record<string, number>).map(([key, val]) => (
-                  <View key={key} style={s.ratioRow}>
-                    <Text style={s.ratioKey}>{key.replace(/_/g, " ")}</Text>
-                    <Text style={s.ratioVal}>{val.toFixed(2)}</Text>
+                  <View key={key} style={styles.ratioRow}>
+                    <Text style={styles.ratioKey}>{key.replace(/_/g, " ")}</Text>
+                    <Text style={styles.ratioVal}>{val.toFixed(2)}</Text>
                   </View>
                 ))}
               </View>
             )}
             {body.size_estimate && (
-              <View style={s.estimateCard}>
-                <Text style={s.estimateTitle}>Rough estimate — NOT a measurement</Text>
+              <View style={styles.estimateCard}>
+                <Text style={styles.estimateTitle}>Rough estimate — not a measurement</Text>
                 {Object.entries(body.size_estimate.cm as Record<string, number>).map(([part, cm]) => {
                   const range = (body.size_estimate as any).cm_range?.[part];
                   return (
-                    <Text key={part} style={s.estimateLine}>
+                    <Text key={part} style={styles.estimateLine}>
                       {part.replace(/_/g, " ")}: about {cm} cm
                       {range ? ` (${range[0]}–${range[1]})` : ""}
                     </Text>
                   );
                 })}
-                <Text style={s.estimateNote}>
+                <Text style={styles.estimateNote}>
                   Centimetres from photos are a noisy estimate — never buy to
                   these numbers. Measure with a tape if the size matters.
                 </Text>
               </View>
             )}
-            <Text style={s.honesty}>
+            <Text style={styles.honesty}>
               Ratios are measured from your silhouette at landmark heights —
               scale-free and reliable. The shape word and centimetre estimate
               are convention and estimate, never exact.
@@ -242,22 +241,22 @@ export default function ProfileScreen({
 
         {/* Taste */}
         {profile?.taste && (
-          <View style={s.card}>
-            <View style={s.sectionHead}>
-              <Text style={s.sectionTitle}>TASTE · INTERPRETATION</Text>
-              <Text style={s.sectionSub}>Mean of images you've saved</Text>
+          <View style={styles.card}>
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionTitle}>Taste · interpretation</Text>
+              <Text style={styles.sectionSub}>Mean of images you've saved</Text>
             </View>
-            <View style={s.readRow}>
-              <View style={s.readItem}>
-                <Text style={s.readLabel}>Pins</Text>
-                <Text style={s.readValue}>{profile.taste.pins ?? 0}</Text>
+            <View style={styles.readRow}>
+              <View style={styles.readItem}>
+                <Text style={styles.readLabel}>Pins</Text>
+                <Text style={styles.readValue}>{profile.taste.pins ?? 0}</Text>
               </View>
-              <View style={s.readItem}>
-                <Text style={s.readLabel}>Available</Text>
-                <Text style={s.readValue}>{profile.taste.available ? "yes" : "no"}</Text>
+              <View style={styles.readItem}>
+                <Text style={styles.readLabel}>Available</Text>
+                <Text style={styles.readValue}>{profile.taste.available ? "yes" : "no"}</Text>
               </View>
             </View>
-            <Text style={s.honesty}>
+            <Text style={styles.honesty}>
               Your taste vector is the mean of SigLIP embeddings of images you
               saved. It represents images you saved — not clothes you like —
               and makes no correctness claim.
@@ -265,59 +264,76 @@ export default function ProfileScreen({
           </View>
         )}
 
-        <View style={{ height: 24 }} />
+        <View style={{ height: space.xl }} />
         {onBack && (
-          <View style={s.backRow}>
-            <Text onPress={onBack} style={s.backTxt}>← Back to today's fit</Text>
-          </View>
+          <TouchableOpacity onPress={onBack} style={styles.backRow}>
+            <Text style={styles.backText}>← Back to today's fit</Text>
+          </TouchableOpacity>
         )}
-        <View style={{ height: 20 }} />
+        <View style={{ height: space.xl }} />
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
-const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.pink },
-  scroll: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 100 },
+/* ---------------- styles ---------------- */
 
-  header: { alignItems: "center", marginTop: 12 },
-  title: { fontWeight: "800", fontSize: 24, lineHeight: 28, color: C.ink, marginTop: 10 },
-  subtitle: { fontSize: 13, color: C.muted, textAlign: "center", marginTop: 6, lineHeight: 19, paddingHorizontal: 12 },
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: Theme.colors.bg },
+  scroll: { paddingHorizontal: Theme.layout.screenPadding, paddingTop: Theme.space.md, paddingBottom: Theme.space.xxxl },
 
-  card: { backgroundColor: C.card, borderRadius: 20, padding: 17, marginTop: 14 },
-  sectionHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 },
-  sectionTitle: { fontWeight: "800", fontSize: 15, color: C.ink },
-  sectionSub: { fontSize: 10, color: C.muted, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.8 },
+  header: { alignItems: "center", marginTop: Theme.space.sm },
+  title: {
+    fontWeight: Theme.type.weights.semibold,
+    fontSize: Theme.type.sizes.hero,
+    lineHeight: Theme.type.sizes.hero * Theme.type.lineHeights.tight,
+    color: Theme.colors.ink,
+    marginTop: Theme.space.sm,
+    letterSpacing: Theme.type.tracking.tight,
+  },
+  subtitle: {
+    fontSize: Theme.type.sizes.body,
+    color: Theme.colors.muted,
+    textAlign: "center",
+    marginTop: Theme.space.xs,
+    lineHeight: Theme.type.sizes.body * Theme.type.lineHeights.relaxed,
+    paddingHorizontal: Theme.space.md,
+  },
 
-  readRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
-  readItem: { flex: 1, backgroundColor: "#fff", borderWidth: 1, borderColor: C.line, borderRadius: 12, padding: 12, alignItems: "center" },
-  readLabel: { fontSize: 9.5, color: C.muted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 },
-  readValue: { fontWeight: "800", fontSize: 15, color: C.ink },
+  card: { backgroundColor: Theme.colors.card, borderRadius: Theme.radius.card, padding: Theme.layout.cardPadding, marginTop: Theme.space.md, ...Theme.shadows.card },
 
-  swatchWrap: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginTop: 12 },
-  swatchCol: { width: 50, alignItems: "center" },
-  swatch: { width: 36, height: 36, borderRadius: 10, marginBottom: 4 },
-  swatchName: { fontSize: 8.5, color: C.muted, textAlign: "center", width: 44 },
+  sectionHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", marginBottom: Theme.space.sm },
+  sectionTitle: { fontWeight: Theme.type.weights.semibold, fontSize: Theme.type.sizes.bodyLarge, color: Theme.colors.ink },
+  sectionSub: { fontSize: Theme.type.sizes.caption, color: Theme.colors.muted, fontWeight: Theme.type.weights.medium, textTransform: "uppercase", letterSpacing: 0.4 },
 
-  ratiosWrap: { marginTop: 8 },
-  ratioLabel: { fontSize: 9.5, color: C.muted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 },
-  ratioRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 },
-  ratioKey: { fontSize: 12, color: C.ink },
-  ratioVal: { fontWeight: "700", fontSize: 12, color: C.roseDark },
+  readRow: { flexDirection: "row", gap: Theme.space.sm, marginBottom: Theme.space.sm },
+  readItem: { flex: 1, backgroundColor: Theme.colors.raised, borderWidth: 1, borderColor: Theme.colors.line, borderRadius: Theme.radius.control, padding: Theme.space.md, alignItems: "center" },
+  readLabel: { fontSize: Theme.type.sizes.caption, color: Theme.colors.muted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: Theme.space.xs },
+  readValue: { fontWeight: Theme.type.weights.semibold, fontSize: Theme.type.sizes.bodyLarge, color: Theme.colors.ink },
 
-  estimateCard: { backgroundColor: "#FBF3E2", borderRadius: 12, padding: 12, marginTop: 12 },
-  estimateTitle: { fontSize: 10, fontWeight: "800", color: C.ink, marginBottom: 8 },
-  estimateLine: { fontSize: 12, color: C.ink, marginBottom: 4 },
-  estimateNote: { fontSize: 10, color: C.muted, marginTop: 8, lineHeight: 15 },
+  readLine: { fontSize: Theme.type.sizes.body, fontWeight: Theme.type.weights.medium, color: Theme.colors.ink, marginTop: Theme.space.sm },
 
-  honesty: { fontSize: 10, color: C.muted, lineHeight: 16, marginTop: 12 },
+  swatchWrap: { flexDirection: "row", flexWrap: "wrap", gap: Theme.space.sm, marginTop: Theme.space.md },
+  swatchCol: { width: 48, alignItems: "center" },
+  swatch: { width: 36, height: 36, borderRadius: Theme.radius.control, marginBottom: Theme.space.xs, borderWidth: 1, borderColor: Theme.colors.line },
+  swatchName: { fontSize: Theme.type.sizes.micro, color: Theme.colors.muted, textAlign: "center", width: 44 },
 
-  footnote: { fontSize: 11, color: C.muted, lineHeight: 17, marginTop: 8 },
+  ratiosWrap: { marginTop: Theme.space.xs },
+  ratioLabel: { fontSize: Theme.type.sizes.caption, color: Theme.colors.muted, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: Theme.space.xs },
+  ratioRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: Theme.space.xs },
+  ratioKey: { fontSize: Theme.type.sizes.body, color: Theme.colors.ink },
+  ratioVal: { fontWeight: Theme.type.weights.semibold, fontSize: Theme.type.sizes.body, color: Theme.colors.accent, fontVariant: ["tabular-nums"] },
 
-  errorCard: { backgroundColor: "#FBF3E2", borderRadius: 14, padding: 14, marginTop: 14, flexDirection: "row", alignItems: "flex-start", gap: 10 },
-  errorText: { fontSize: 12, color: C.ink, lineHeight: 17, flex: 1 },
+  estimateCard: { backgroundColor: Theme.colors.accentSoft, borderRadius: Theme.radius.control, padding: Theme.space.md, marginTop: Theme.space.md },
+  estimateTitle: { fontSize: Theme.type.sizes.caption, fontWeight: Theme.type.weights.semibold, color: Theme.colors.ink, marginBottom: Theme.space.xs },
+  estimateLine: { fontSize: Theme.type.sizes.body, color: Theme.colors.ink, marginBottom: Theme.space.xs },
+  estimateNote: { fontSize: Theme.type.sizes.caption, color: Theme.colors.muted, marginTop: Theme.space.xs, lineHeight: Theme.type.sizes.caption * Theme.type.lineHeights.relaxed },
 
-  backRow: { marginTop: 16 },
-  backTxt: { fontSize: 13, color: C.roseDark, fontWeight: "600" },
+  honesty: { fontSize: Theme.type.sizes.caption, color: Theme.colors.muted, lineHeight: Theme.type.sizes.caption * Theme.type.lineHeights.relaxed, marginTop: Theme.space.md },
+
+  errorCard: { backgroundColor: Theme.colors.accentSoft, borderRadius: Theme.radius.control, padding: Theme.space.md, marginTop: Theme.space.md, flexDirection: "row", alignItems: "flex-start", gap: Theme.space.md },
+  errorText: { fontSize: Theme.type.sizes.body, color: Theme.colors.ink, lineHeight: Theme.type.sizes.body * Theme.type.lineHeights.relaxed, flex: 1 },
+
+  backRow: { marginTop: Theme.space.lg, alignItems: "center" },
+  backText: { fontSize: Theme.type.sizes.body, color: Theme.colors.accent, fontWeight: Theme.type.weights.medium },
 });

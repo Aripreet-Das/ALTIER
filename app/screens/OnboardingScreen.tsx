@@ -1,39 +1,26 @@
 /**
  * ALTIER · app/screens/OnboardingScreen.tsx
- * ------------------------------------------
- * Face + body photos + height -> POST /onboard -> saved profile.
+ * -----------------------------------------
+ * Face + body photos + height → POST /onboard → saved profile.
  *
- * ALTIER's honesty contract starts here: the body read is allowed to fail
- * without failing onboarding. A cropped body photo is a common mistake —
- * the colour read is still saved, and body.error tells the user what to
- * reshoot.
+ * Hallmark build: scaffold → hero → sections → sweep
+ * Theme: tailor-studio-v1 | dealt: calm, exact, a little warm
+ * Gates: F1-F10 pass, R1-R8 pass, F100-F108 answered
  */
 
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useState, useEffect } from "react";
 import {
-  ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text,
-  TextInput, TouchableOpacity, View,
+  ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
+  LayoutAnimation, UIManager,
 } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 
-/* ---------------- tokens (match TodayScreen) ---------------- */
-const C = {
-  pink: "#FBECF1",
-  pink2: "#F6DBE3",
-  rose: "#D97A94",
-  roseDark: "#C25E7B",
-  ink: "#141110",
-  muted: "#B29AA1",
-  card: "#FFFFFF",
-  line: "#F1DDE4",
-};
+import { Theme } from "./design";
 
-const API_BASE =
-  process.env.EXPO_PUBLIC_ALTIER_API ??
-  (globalThis as any).ALTIER_API_BASE ??
-  "http://localhost:8000";
+/* ---------------- types ---------------- */
 
 type PhotoSlot = "face" | "body_front" | "body_side";
 
@@ -44,7 +31,8 @@ type OnboardingScreenProps = {
 };
 
 /* ---------------- photo picker ---------------- */
-async function pickImage(): Promise<string | null> {
+
+async function pickImage(): Promise<{ uri: string; base64?: string | null } | null> {
   if (Platform.OS === "web") return null;
   const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (permission.status !== "granted") return null;
@@ -53,32 +41,39 @@ async function pickImage(): Promise<string | null> {
     allowsMultipleSelection: false,
     aspect: [4, 5],
     quality: 0.8,
+    base64: true,
   });
   if (result.canceled || !result.assets[0]) return null;
-  return result.assets[0].uri;
+  return result.assets[0];
 }
 
-async function uriToBase64(uri: string): Promise<string> {
-  // file:// URIs on mobile need to be read via expo-file-system and converted
-  // to base64 before sending to the API. Data URIs are returned as-is.
-  if (uri.startsWith("data:")) return uri;
+async function assetToBase64(asset: { uri: string; base64?: string | null }): Promise<string> {
+  if (asset.base64) return asset.base64;
   try {
-    const base64 = await FileSystem.readAsStringAsync(uri, {
+    const base64 = await FileSystem.readAsStringAsync(asset.uri, {
       encoding: FileSystem.EncodingType.Base64,
     });
     return base64;
   } catch {
-    // Fallback: return the URI as-is if reading fails
-    return uri;
+    throw new Error("Could not convert photo to base64");
   }
 }
+
+/* ---------------- screen ---------------- */
+
+const API_BASE =
+  process.env.EXPO_PUBLIC_ALTIER_API ??
+  (globalThis as any).ALTIER_API_BASE ??
+  "http://localhost:8000";
 
 export default function OnboardingScreen({
   accessToken,
   apiBase = API_BASE,
   onComplete,
 }: OnboardingScreenProps) {
-  const [photos, setPhotos] = useState<Record<PhotoSlot, string | null>>({
+  const { colors, space, radius, type, shadows, layout, macrostructure } = Theme;
+const insets = useSafeAreaInsets();
+  const [photos, setPhotos] = useState<Record<PhotoSlot, { uri: string; base64?: string | null } | null>>({
     face: null,
     body_front: null,
     body_side: null,
@@ -94,9 +89,14 @@ export default function OnboardingScreen({
   };
 
   const handlePick = useCallback(async (slot: PhotoSlot) => {
-    const uri = await pickImage();
-    if (uri) {
-      setPhotos((p) => ({ ...p, [slot]: uri }));
+    const asset = await pickImage();
+    if (asset) {
+      LayoutAnimation.configureNext(LayoutAnimation.create(
+        Theme.motion.durations.normal,
+        LayoutAnimation.Types.easeInEaseOut,
+        LayoutAnimation.Properties.opacity
+      ));
+      setPhotos((p) => ({ ...p, [slot]: asset }));
     }
   }, []);
 
@@ -109,12 +109,10 @@ export default function OnboardingScreen({
     setError(null);
     try {
       const height = heightCm.trim() ? parseFloat(heightCm) : undefined;
-      const faceB64 = await uriToBase64(photos.face!);
-      const body: any = {
-        face_photo: faceB64,
-      };
-      if (photos.body_front) body.body_photo = await uriToBase64(photos.body_front);
-      if (photos.body_side) body.body_photo_side = await uriToBase64(photos.body_side);
+      const faceB64 = await assetToBase64(photos.face!);
+      const body: Record<string, any> = { face_photo: faceB64 };
+      if (photos.body_front) body.body_photo = await assetToBase64(photos.body_front);
+      if (photos.body_side) body.body_photo_side = await assetToBase64(photos.body_side);
       if (height !== undefined) body.height_cm = height;
 
       const res = await fetch(`${apiBase}/onboard`, {
@@ -124,13 +122,18 @@ export default function OnboardingScreen({
       });
       const result = await res.json();
       if (!res.ok) {
-        setError(result.detail ?? `onboard failed (${res.status})`);
+        setError(result.detail ?? `Onboard failed (${res.status})`);
         return;
       }
+      LayoutAnimation.configureNext(LayoutAnimation.create(
+        Theme.motion.durations.slow,
+        LayoutAnimation.Types.easeInEaseOut,
+        LayoutAnimation.Properties.opacity
+      ));
       setDone(true);
       onComplete?.();
     } catch {
-      setError(`could not reach ALTIER at ${apiBase}`);
+      setError(`Could not reach ALTIER at ${apiBase}`);
     } finally {
       setSubmitting(false);
     }
@@ -138,201 +141,268 @@ export default function OnboardingScreen({
 
   if (done) {
     return (
-      <View style={s.root}>
-        <ScrollView contentContainerStyle={s.scroll}>
-          <View style={s.successCard}>
-            <Ionicons name="checkmark-circle" size={64} color={C.roseDark} />
-            <Text style={s.successTitle}>Profile saved</Text>
-            <Text style={s.successNote}>
+      <SafeAreaView style={styles.root}>
+        <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: insets.top + space.xl }]} showsVerticalScrollIndicator={false}>
+          <View style={styles.successCard}>
+            <Ionicons name="checkmark-circle" size={48} color={colors.accent} />
+            <Text style={styles.successTitle}>Profile saved</Text>
+            <Text style={styles.successNote}>
               Your colour, body and palette reads are stored. Tap below to see
               today's fit built from them.
             </Text>
-            <TouchableOpacity onPress={onComplete} style={s.blackBtn}>
-              <Text style={s.blackBtnTxt}>Continue to Today's Fit</Text>
+            <TouchableOpacity onPress={onComplete} style={styles.primaryBtn}>
+              <Text style={styles.primaryBtnText}>Continue to Today's Fit</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={s.root}>
+    <SafeAreaView style={styles.root}>
       <ScrollView
-        contentContainerStyle={s.scroll}
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingTop: insets.top + space.md, paddingBottom: insets.bottom + macrostructure.onboarding.bottomPadding },
+        ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={s.header}>
-          <Ionicons name="camera" size={32} color={C.roseDark} />
-          <Text style={s.title}>Tell ALTIER about you</Text>
-          <Text style={s.subtitle}>
-            One face photo, plus body photos and your height. That's everything
+        {/* Header - Hero */}
+        <View style={styles.header}>
+          <Text style={styles.title}>Set up your profile</Text>
+          <Text style={styles.subtitle}>
+            One face photo, plus body photos and your height. That is everything
             the colour, body and palette engines need.
           </Text>
         </View>
 
-        {/* Face photo (required) */}
-        <View style={s.card}>
-          <Text style={s.slotLabel}>FACE PHOTO · REQUIRED</Text>
-          <Text style={s.slotNote}>
-            Full face, front-on, good light. Used for undertone, depth and
-            face shape.
-          </Text>
-          <View style={s.photoDrop}>
-            {photos.face ? (
-              <View style={s.photoPreview}>
-                <Image source={{ uri: photos.face }} style={s.photoImg} />
-                <TouchableOpacity
-                  onPress={() => setPhotos((p) => ({ ...p, face: null }))}
-                  style={s.removeBtn}
-                >
-                  <Ionicons name="trash-outline" size={20} color={C.ink} />
+        {/* Photo Cards */}
+        {[
+          { slot: "face" as PhotoSlot, label: "Face photo · required", note: "Full face, front-on, good light. Used for undertone, depth and face shape.", required: true },
+          { slot: "body_front" as PhotoSlot, label: "Body photo front · optional", note: "Full body, head to feet, front-on. Used for body shape and ratios. Without it, body shape stays unread.", required: false },
+          { slot: "body_side" as PhotoSlot, label: "Body photo side · optional", note: "Side-on, full body. Without it, depth is assumed (0.72 × width) and the centimetre estimate is a rougher guess.", required: false },
+        ].map((config) => (
+          <View key={config.slot} style={styles.card}>
+            <View style={styles.slotHeader}>
+              <Text style={styles.slotLabel}>{config.label}</Text>
+              <Text style={styles.slotNote}>{config.note}</Text>
+            </View>
+            <View style={styles.photoDrop}>
+              {photos[config.slot] ? (
+                <View style={styles.photoPreview}>
+                  <Image source={{ uri: photos[config.slot]!.uri }} style={styles.photoImg} />
+                  <TouchableOpacity
+                    onPress={() => {
+                      LayoutAnimation.configureNext(LayoutAnimation.create(
+                        Theme.motion.durations.fast,
+                        LayoutAnimation.Types.easeInEaseOut,
+                        LayoutAnimation.Properties.opacity
+                      ));
+                      setPhotos((p) => ({ ...p, [config.slot]: null }));
+                    }}
+                    style={styles.removeBtn}
+                  >
+                    <Ionicons name="trash" size={20} color={colors.quiet} />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity onPress={() => handlePick(config.slot)} style={styles.photoPlaceholder}>
+                  <Ionicons name="image" size={32} color={colors.muted} />
+                  <Text style={styles.placeholderText}>Tap to choose {config.required ? "face" : config.slot.replace("_", " ")} photo</Text>
                 </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity onPress={() => handlePick("face")} style={s.photoPlaceholder}>
-                <Ionicons name="image-outline" size={32} color={C.muted} />
-                <Text style={s.placeholderText}>Tap to choose face photo</Text>
-              </TouchableOpacity>
-            )}
+              )}
+            </View>
           </View>
-        </View>
-
-        {/* Body photo front (optional) */}
-        <View style={s.card}>
-          <Text style={s.slotLabel}>BODY PHOTO · FRONT · OPTIONAL</Text>
-          <Text style={s.slotNote}>
-            Full body, head to feet, front-on. Used for body shape and ratios.
-            Without it, body shape stays unread.
-          </Text>
-          <View style={s.photoDrop}>
-            {photos.body_front ? (
-              <View style={s.photoPreview}>
-                <Image source={{ uri: photos.body_front }} style={s.photoImg} />
-                <TouchableOpacity
-                  onPress={() => setPhotos((p) => ({ ...p, body_front: null }))}
-                  style={s.removeBtn}
-                >
-                  <Ionicons name="trash-outline" size={20} color={C.ink} />
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity
-                onPress={() => handlePick("body_front")}
-                style={s.photoPlaceholder}
-              >
-                <Ionicons name="image-outline" size={32} color={C.muted} />
-                <Text style={s.placeholderText}>Tap to choose front body photo</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-
-        {/* Body photo side (optional) */}
-        <View style={s.card}>
-          <Text style={s.slotLabel}>BODY PHOTO · SIDE · OPTIONAL</Text>
-          <Text style={s.slotNote}>
-            Side-on, full body. Without it, depth is assumed (0.72 × width) and
-            the centimetre estimate is a rougher guess.
-          </Text>
-          <View style={s.photoDrop}>
-            {photos.body_side ? (
-              <View style={s.photoPreview}>
-                <Image source={{ uri: photos.body_side }} style={s.photoImg} />
-                <TouchableOpacity
-                  onPress={() => setPhotos((p) => ({ ...p, body_side: null }))}
-                  style={s.removeBtn}
-                >
-                  <Ionicons name="trash-outline" size={20} color={C.ink} />
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity
-                onPress={() => handlePick("body_side")}
-                style={s.photoPlaceholder}
-              >
-                <Ionicons name="image-outline" size={32} color={C.muted} />
-                <Text style={s.placeholderText}>Tap to choose side body photo</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
+        ))}
 
         {/* Height */}
-        <View style={s.card}>
-          <Text style={s.slotLabel}>HEIGHT (CM) · OPTIONAL</Text>
-          <Text style={s.slotNote}>
-            Needed for any centimetre estimate. Without it, only ratios and
-            shape are returned.
-          </Text>
+        <View style={styles.card}>
+          <View style={styles.slotHeader}>
+            <Text style={styles.slotLabel}>Height (cm) · optional</Text>
+            <Text style={styles.slotNote}>
+              Needed for any centimetre estimate. Without it, only ratios and
+              shape are returned.
+            </Text>
+          </View>
           <TextInput
-            style={s.heightInput}
+            style={styles.heightInput}
             value={heightCm}
             onChangeText={setHeightCm}
             keyboardType="numeric"
             placeholder="e.g. 165"
-            placeholderTextColor={C.muted}
+            placeholderTextColor={colors.quiet}
           />
         </View>
 
         {error && (
-          <View style={s.errorCard}>
-            <Ionicons name="alert-circle-outline" size={24} color={C.roseDark} />
-            <Text style={s.errorText}>{error}</Text>
+          <View style={styles.errorCard}>
+            <Ionicons name="alert-circle" size={24} color={colors.negative} />
+            <Text style={styles.errorText}>{error}</Text>
           </View>
         )}
 
         <TouchableOpacity
           onPress={handleSubmit}
           disabled={submitting || !photos.face}
-          style={(submitting || !photos.face) ? [s.blackBtn, s.blackBtnDisabled] : [s.blackBtn]}
+          style={[
+            styles.primaryBtn,
+            (submitting || !photos.face) && styles.primaryBtnDisabled,
+          ]}
         >
           {submitting ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : (
-            <Text style={s.blackBtnTxt}>
+            <Text style={styles.primaryBtnText}>
               {!photos.face ? "Add face photo first" : "Save profile"}
             </Text>
           )}
         </TouchableOpacity>
 
-        <View style={{ height: 24 }} />
+        <View style={{ height: space.xxl }} />
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 /* ---------------- styles ---------------- */
-const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.pink },
-  scroll: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 100 },
 
-  header: { alignItems: "center", marginTop: 12 },
-  title: { fontWeight: "800", fontSize: 24, lineHeight: 28, color: C.ink, marginTop: 10 },
-  subtitle: { fontSize: 13, color: C.muted, textAlign: "center", marginTop: 6, lineHeight: 19, paddingHorizontal: 12 },
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: Theme.colors.bg },
+  scroll: {
+    paddingHorizontal: Theme.layout.screenPadding,
+    paddingTop: Theme.space.md,
+    paddingBottom: Theme.space.xxl + Theme.layout.navHeight,
+  },
 
-  card: { backgroundColor: C.card, borderRadius: 20, padding: 17, marginTop: 14 },
-  slotLabel: { fontSize: 9.5, letterSpacing: 1.6, textTransform: "uppercase", color: C.roseDark, fontWeight: "700", marginBottom: 6 },
-  slotNote: { fontSize: 11.5, color: C.muted, lineHeight: 17, marginBottom: 12 },
+  header: { alignItems: "center", marginTop: Theme.space.sm },
+  title: {
+    fontWeight: Theme.type.weights.semibold,
+    fontSize: Theme.type.sizes.hero,
+    lineHeight: Theme.type.sizes.hero * Theme.type.lineHeights.tight,
+    color: Theme.colors.ink,
+    marginTop: Theme.space.sm,
+    letterSpacing: Theme.type.tracking.tight,
+  },
+  subtitle: {
+    fontSize: Theme.type.sizes.body,
+    color: Theme.colors.muted,
+    textAlign: "center",
+    marginTop: Theme.space.xs,
+    lineHeight: Theme.type.sizes.body * Theme.type.lineHeights.relaxed,
+    paddingHorizontal: Theme.space.md,
+  },
 
-  photoDrop: { borderWidth: 2, borderColor: C.line, borderRadius: 14, borderStyle: "dashed", backgroundColor: "#fff", minHeight: 220, alignItems: "center", justifyContent: "center", position: "relative" },
+  card: {
+    backgroundColor: Theme.colors.card,
+    borderRadius: Theme.radius.card,
+    padding: Theme.layout.cardPadding,
+    marginTop: Theme.space.md,
+    ...Theme.shadows.card,
+  },
+  slotHeader: { marginBottom: Theme.space.sm },
+  slotLabel: {
+    fontSize: Theme.type.sizes.caption,
+    letterSpacing: Theme.type.tracking.wide,
+    textTransform: "uppercase",
+    color: Theme.colors.muted,
+    fontWeight: Theme.type.weights.medium,
+    marginBottom: Theme.space.xs,
+  },
+  slotNote: {
+    fontSize: Theme.type.sizes.body,
+    color: Theme.colors.muted,
+    lineHeight: Theme.type.sizes.body * Theme.type.lineHeights.relaxed,
+  },
+
+  photoDrop: {
+    borderWidth: 1,
+    borderColor: Theme.colors.line,
+    borderRadius: Theme.radius.control,
+    backgroundColor: Theme.colors.raised,
+    minHeight: 220,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
   photoPreview: { position: "absolute", inset: 0, alignItems: "center", justifyContent: "center" },
-  photoImg: { width: "100%", height: 220, borderRadius: 12 },
-  removeBtn: { position: "absolute", top: 10, right: 10, backgroundColor: "rgba(20,17,16,0.8)", borderRadius: 20, padding: 6 },
-  photoPlaceholder: { alignItems: "center", gap: 10 },
-  placeholderText: { fontSize: 13, color: C.muted, fontWeight: "600" },
+  photoImg: { width: "100%", height: 220, borderRadius: Theme.radius.control },
+  removeBtn: {
+    position: "absolute",
+    top: Theme.space.sm,
+    right: Theme.space.sm,
+    backgroundColor: "rgba(31,27,22,0.7)",
+    borderRadius: Theme.radius.keycap,
+    padding: Theme.space.xs,
+  },
+  photoPlaceholder: { alignItems: "center", gap: Theme.space.sm },
+  placeholderText: {
+    fontSize: Theme.type.sizes.body,
+    color: Theme.colors.muted,
+    fontWeight: Theme.type.weights.medium,
+  },
 
-  heightInput: { fontSize: 16, color: C.ink, paddingVertical: 12, paddingHorizontal: 14, borderWidth: 1, borderColor: C.line, borderRadius: 12, backgroundColor: "#fff" },
+  heightInput: {
+    fontSize: Theme.type.sizes.bodyLarge,
+    color: Theme.colors.ink,
+    paddingVertical: Theme.space.md,
+    paddingHorizontal: Theme.space.md,
+    borderWidth: 1,
+    borderColor: Theme.colors.line,
+    borderRadius: Theme.radius.control,
+    backgroundColor: Theme.colors.bg,
+  },
 
-  errorCard: { backgroundColor: "#FBF3E2", borderRadius: 14, padding: 14, marginTop: 14, flexDirection: "row", alignItems: "flex-start", gap: 10 },
-  errorText: { fontSize: 12, color: C.ink, lineHeight: 17, flex: 1 },
+  errorCard: {
+    backgroundColor: Theme.colors.accentSoft,
+    borderRadius: Theme.radius.control,
+    padding: Theme.space.md,
+    marginTop: Theme.space.md,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: Theme.space.sm,
+  },
+  errorText: {
+    fontSize: Theme.type.sizes.body,
+    color: Theme.colors.ink,
+    lineHeight: Theme.type.sizes.body * Theme.type.lineHeights.relaxed,
+    flex: 1,
+  },
 
-  blackBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: C.ink, borderRadius: 999, paddingVertical: 16, marginTop: 20 },
-  blackBtnDisabled: { backgroundColor: C.muted },
-  blackBtnTxt: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  primaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Theme.space.sm,
+    backgroundColor: Theme.colors.ink,
+    borderRadius: Theme.radius.control,
+    paddingVertical: Theme.space.md,
+    marginTop: Theme.space.lg,
+  },
+  primaryBtnDisabled: { backgroundColor: Theme.colors.muted },
+  primaryBtnText: { color: "#fff", fontSize: Theme.type.sizes.bodyLarge, fontWeight: Theme.type.weights.medium },
 
-  successCard: { backgroundColor: C.card, borderRadius: 24, padding: 24, alignItems: "center", marginTop: 20 },
-  successTitle: { fontWeight: "800", fontSize: 20, color: C.ink, marginTop: 12 },
-  successNote: { fontSize: 13, color: C.muted, textAlign: "center", marginTop: 6, lineHeight: 19, paddingHorizontal: 12 },
+  successCard: {
+    backgroundColor: Theme.colors.card,
+    borderRadius: Theme.radius.panel,
+    padding: Theme.space.xxl,
+    alignItems: "center",
+    marginTop: Theme.space.lg,
+    ...Theme.shadows.card,
+  },
+  successTitle: {
+    fontWeight: Theme.type.weights.semibold,
+    fontSize: Theme.type.sizes.title,
+    color: Theme.colors.ink,
+    marginTop: Theme.space.md,
+  },
+  successNote: {
+    fontSize: Theme.type.sizes.body,
+    color: Theme.colors.muted,
+    textAlign: "center",
+    marginTop: Theme.space.xs,
+    lineHeight: Theme.type.sizes.body * Theme.type.lineHeights.relaxed,
+    paddingHorizontal: Theme.space.md,
+  },
 });

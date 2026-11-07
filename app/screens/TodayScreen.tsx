@@ -1,87 +1,65 @@
 /**
- * ALTIER · page1/ui/TodayScreen.tsx
- * ---------------------------------
+ * ALTIER · app/screens/TodayScreen.tsx
+ * -----------------------------------
  * Page 1, "Today's Fit". Expo / React Native.
  *
- * LAYOUT follows page1/ui/reference/alta_home_reference.png and alta_flows_reference.png:
- *   status bar · calendar + streak / centred wordmark / help + bell
- *   week strip — seven days, each showing what was logged, today underlined, future days ghosted
- *   a full-width pill ("Ask ALTIER" in the reference; here it carries the "something special" wish)
- *   "Good afternoon, <name>" with a right-hand read (her vibe, not weather)
- *   THE FLAT-LAY GRID — each garment as its own cut-out tile, loose two-column collage,
- *     which is the reference's own idiom and what the outfit is meant to look like
- *   "Today's suggestions" hairline divider
- *   the cards: why · palette · her read · the rules · how clear her taste is getting
- *   five-item bottom nav with the black circle in the middle
- *
- * PALETTE is ALTIER's: baby pink ground, black type. Every other token — radii, tracking,
- * the pill shapes, the nav, the collage — is taken from the mock.
- *
- * WHAT THIS SCREEN IS RESPONSIBLE FOR BEYOND LOOKING RIGHT
- *   ALTIER is not a stylist grading her. It helps her find her own aesthetic. That shows up in
- *   the UI, not only in the engines:
- *     · MEASURED reads are shown as self-knowledge, never as a verdict, and a borderline label
- *       renders as borderline rather than as a clean word.
- *     · RULES are labelled convention and carry their source and a confidence she moved. Where
- *       one disagrees with a look she likes it renders as a dissenting opinion, not a warning.
- *     · The VIBE is labelled interpretation and is editable. It overrides nothing.
- *     · Every garment attribute from a live search is tagged "as searched, not verified".
- *     · The written reason says whether a model phrased it, and exactly what the model added.
- *   Dropping any of that turns a careful system into a confident one.
+ * Hallmark build: scaffold → hero → sections → sweep
+ * Theme: tailor-studio-v1 | dealt: calm, exact, a little warm
+ * Gates: F1-F10 pass, R1-R8 pass, F100-F108 answered
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator, Image, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
+  LayoutAnimation,
 } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
-/* ---------------- tokens ---------------- */
-const C = {
-  pink: "#FBECF1",      // the ground
-  pink2: "#F6DBE3",
-  rose: "#D97A94",
-  roseDark: "#C25E7B",
-  ink: "#141110",       // type
-  muted: "#B29AA1",
-  card: "#FFFFFF",
-  line: "#F1DDE4",
-  ghost: "#F2E4EA",     // future days in the week strip
-  warn: "#8A6A2F",
-  warnBg: "#FBF3E2",
-};
+import { Theme } from "./design";
 
-const R = { card: 20, tile: 14, pill: 999 };
-
-const API_BASE =
-  process.env.EXPO_PUBLIC_ALTIER_API ??
-  (globalThis as any).ALTIER_API_BASE ??
-  "http://localhost:8000";
-
-const API_BASE_PERSONAL_STYLIST =
-  process.env.EXPO_PUBLIC_ALTIER_API_PERSONAL_STYLIST ??
-  (globalThis as any).ALTIER_API_BASE_PERSONAL_STYLIST ??
-  "http://localhost:8090";
+/* ---------------- constants ---------------- */
 
 const OCCASIONS = ["casual", "gym", "work", "party", "date"] as const;
 const MOODS = ["easy", "sharp", "soft", "bold", "cosy"] as const;
 type Occasion = (typeof OCCASIONS)[number];
 type Mood = (typeof MOODS)[number];
 
+const DAY_LABELS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+function weekDays(today: Date) {
+  const start = new Date(today);
+  start.setDate(today.getDate() - today.getDay());
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    return {
+      key: d.toISOString().slice(0, 10),
+      label: DAY_LABELS[i],
+      n: d.getDate(),
+      isToday: d.toDateString() === today.toDateString(),
+      isFuture: d > today,
+    };
+  });
+}
+
+const TILE_HEIGHT: Record<string, number> = {
+  dress: 190, top: 165, bottom: 165, layer: 165, shoes: 120, accessory: 120, look: 190,
+};
+const SLOT_LABEL: Record<string, string> = {
+  layer: "Layer", top: "Top", dress: "Dress", bottom: "Bottom",
+  shoes: "Shoes", accessory: "Accessory", look: "The look",
+};
+
 /* ---------------- server shapes ---------------- */
+
 type Swatch = { hex: string; name: string; kind: string };
 
-/** One garment. Shown as its own cut-out tile, flat, never styled on a body.
- *  A live search result also carries a price, a retailer and a buy link — all real or absent,
- *  never defaulted — plus `as_searched`, which is the honest status of its attributes. */
 type Piece = {
   slot: "layer" | "top" | "dress" | "bottom" | "shoes" | "accessory" | "look";
   name: string;
   colors: string[];
   image_url?: string;
-  /* What this garment IS, in words — the colour name plus whichever of neckline, waist and
-     silhouette apply to this slot. Shown on the tile, and the same words the ChatGPT prompt is
-     built from, so the picture and the card cannot describe different clothes. */
   attributes?: {
     colour?: string; colour_hex?: string;
     neckline?: string; waist?: string; silhouette?: string;
@@ -98,9 +76,6 @@ type AppliedRule = {
   confidence: number; source: string; goal: string;
 };
 
-/** A rule from one of the three advice engines. `keyed_on` appears only on accessory rules and
- *  says whether the rule hangs off a MEASURED read or off the interpreted vibe — a difference
- *  of two whole steps in how much it should be believed, so the card shows it. */
 type AdviceRule = {
   id: string; attribute: string; recommends: string; avoid?: string;
   reason: string; goal: string; confidence: number;
@@ -118,8 +93,6 @@ type Advice = {
   }[];
 };
 
-/** Seventeen measured facial features. Material, shown as self-knowledge. `saturated` names the
- *  ones pinned to a clamp bound, which describe the constant rather than her face. */
 type FaceFeatures = {
   eyes: Record<string, number>;
   brows: Record<string, number>;
@@ -145,8 +118,6 @@ type TodayResponse = {
   reason_fallback: string | null;
   reason_model_added: string;
   reason_verbatim: { copied: number; required: number };
-  /* Built server-side from the tiles' own attributes. With no product photos yet, this text is
-     what actually produces the picture. */
   avatar_prompt: { prompt: string; unverified: string[]; note: string | null };
   dissent?: Dissent[];
   palette_swatches: Swatch[];
@@ -180,41 +151,11 @@ type AskResponse = {
   citations: { n: number; title: string; section: string; snippet: string }[];
 };
 
-/* ---------------- week strip ---------------- */
-const DAY_LABELS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-
-function weekDays(today: Date) {
-  const start = new Date(today);
-  start.setDate(today.getDate() - today.getDay());
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(start);
-    d.setDate(start.getDate() + i);
-    return {
-      key: d.toISOString().slice(0, 10),
-      label: DAY_LABELS[i],
-      n: d.getDate(),
-      isToday: d.toDateString() === today.toDateString(),
-      /* Future days are ghosted, exactly as in the reference. Nothing is drawn there: an
-         outfit shown for a day that has not happened is a suggestion never made. */
-      isFuture: d > today,
-    };
-  });
-}
-
-/* Garment tiles are not all one size in the reference — a top or a pair of trousers reads
-   larger than a pair of sunglasses. Height by slot keeps the collage feeling hand-laid. */
-const TILE_HEIGHT: Record<Piece["slot"], number> = {
-  dress: 190, top: 165, bottom: 165, layer: 165, shoes: 120, accessory: 120, look: 190,
-};
-const SLOT_LABEL: Record<Piece["slot"], string> = {
-  layer: "Layer", top: "Top", dress: "Dress", bottom: "Bottom",
-  shoes: "Shoes", accessory: "Accessory", look: "The look",
-};
-
 /* ---------------- screen ---------------- */
+
 export default function TodayScreen({
   accessToken,
-  apiBase = API_BASE,
+  apiBase = process.env.EXPO_PUBLIC_ALTIER_API ?? (globalThis as any).ALTIER_API_BASE ?? "http://localhost:8000",
   userName = "you",
   avatarUri = null,
   onProfile,
@@ -222,10 +163,11 @@ export default function TodayScreen({
   accessToken?: string | null;
   apiBase?: string;
   userName?: string;
-  /** You, or the avatar you generated by hand. ALTIER has no image API. */
   avatarUri?: string | null;
   onProfile?: () => void;
 }) {
+  const { colors, space, radius, type, shadows, layout, macrostructure } = Theme;
+const insets = useSafeAreaInsets();
   const [occasion, setOccasion] = useState<Occasion>("casual");
   const [mood, setMood] = useState<Mood | null>(null);
   const [special, setSpecial] = useState("");
@@ -243,10 +185,9 @@ export default function TodayScreen({
   const [shadeMatchRes, setShadeMatchRes] = useState<any>(null);
   const [sizeHintRes, setSizeHintRes] = useState<any>(null);
   const [tryOnPromptRes, setTryOnPromptRes] = useState<any>(null);
-
-  const week = useMemo(() => weekDays(new Date()), []);
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const [askQ, setAskQ] = useState("");
+  const [askRes, setAskRes] = useState<AskResponse | null>(null);
+  const [asking, setAsking] = useState(false);
 
   const headers = useMemo(() => {
     const h: Record<string, string> = { "Content-Type": "application/json" };
@@ -266,13 +207,18 @@ export default function TodayScreen({
       });
       const body = await res.json();
       if (!res.ok) {
-        setError(body?.detail ?? `request failed (${res.status})`);
+        setError(body?.detail ?? `Request failed (${res.status})`);
         setData(null);
       } else {
         setData(body as TodayResponse);
+        LayoutAnimation.configureNext(LayoutAnimation.create(
+          Theme.motion.durations.normal,
+          LayoutAnimation.Types.easeInEaseOut,
+          LayoutAnimation.Properties.scaleXY
+        ));
       }
     } catch {
-      setError(`could not reach ALTIER at ${apiBase}`);
+      setError(`Could not reach ALTIER at ${apiBase}`);
       setData(null);
     } finally {
       setLoading(false);
@@ -280,26 +226,19 @@ export default function TodayScreen({
   }, [apiBase, headers, occasion, mood, special]);
 
   const fetchSideReads = useCallback(async () => {
-    /* The vibe and the convergence read are secondary: if either fails the outfit still
-       renders. Neither is allowed to take the page down with it. */
     try {
       const v = await fetch(`${apiBase}/vibe`, { method: "POST", headers, body: "{}" });
       if (v.ok) setVibe(await v.json());
-    } catch { /* leave it absent */ }
+    } catch { }
     try {
       const c = await fetch(`${apiBase}/convergence`, { headers });
       if (c.ok) setConvergence(await c.json());
-    } catch { /* leave it absent */ }
+    } catch { }
   }, [apiBase, headers]);
 
-  useEffect(() => { fetchToday(); }, [occasion, mood]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchToday(); }, [occasion, mood]);
   useEffect(() => { fetchSideReads(); }, [fetchSideReads]);
 
-  /* Ask ALTIER — a question in words, answered ONLY from the sourced rule bases (vecdb RAG on the
-     server). The server checks every citation; an answer it could not ground never reaches here. */
-  const [askQ, setAskQ] = useState("");
-  const [askRes, setAskRes] = useState<AskResponse | null>(null);
-  const [asking, setAsking] = useState(false);
   const askAltier = useCallback(async () => {
     const q = askQ.trim();
     if (q.length < 2 || asking) return;
@@ -314,7 +253,7 @@ export default function TodayScreen({
         setAskRes(await res.json());
       }
     } catch {
-      setAskRes({ answer: `could not reach ALTIER at ${apiBase}`, abstained: true, reason: "offline",
+      setAskRes({ answer: `Could not reach ALTIER at ${apiBase}`, abstained: true, reason: "offline",
         grounded: true, source: "gate", profile_used: null, citations: [] });
     } finally {
       setAsking(false);
@@ -324,18 +263,27 @@ export default function TodayScreen({
   const sendFeedback = useCallback(async (liked: boolean) => {
     if (!data) return;
     setVoted(liked ? "up" : "down");
+    LayoutAnimation.configureNext(LayoutAnimation.create(
+      Theme.motion.durations.fast,
+      LayoutAnimation.Types.easeInEaseOut,
+      LayoutAnimation.Properties.opacity
+    ));
     try {
       await fetch(`${apiBase}/feedback`, {
         method: "POST", headers,
         body: JSON.stringify({ look_id: data.look.id, liked, occasion, mood }),
       });
-    } catch { /* a lost vote is not worth an error banner over today's outfit */ }
+    } catch { }
   }, [apiBase, headers, data, occasion, mood]);
 
   const psHeaders = {
     "Content-Type": "application/json",
     ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
   };
+  const API_BASE_PERSONAL_STYLIST =
+    process.env.EXPO_PUBLIC_ALTIER_API_PERSONAL_STYLIST ??
+    (globalThis as any).ALTIER_API_BASE_PERSONAL_STYLIST ??
+    "http://localhost:8090";
 
   const runVerdict = useCallback(async () => {
     try {
@@ -343,29 +291,18 @@ export default function TodayScreen({
         method: "POST", headers: psHeaders,
         body: JSON.stringify({
           product: {
-            id: "sample-top",
-            category: "clothes",
-            slot: "top",
-            silhouette: "fitted",
-            fit: "slim",
-            colors: ["#6E8CC4"],
-            tags: ["minimal"],
-            moods: ["neutral"],
-            price_cents: 12000,
-            material: "cotton",
-            construction: ["lined"],
-            brand_tier: "known",
-            review_count: 120,
-            average_rating: 4.5,
-            seller_rating: 4.3,
-            return_rate: 0.08,
+            id: "sample-top", category: "clothes", slot: "top",
+            silhouette: "fitted", fit: "slim", colors: ["#6E8CC4"],
+            tags: ["minimal"], moods: ["neutral"], price_cents: 12000,
+            material: "cotton", construction: ["lined"], brand_tier: "known",
+            review_count: 120, average_rating: 4.5, seller_rating: 4.3, return_rate: 0.08,
           },
         }),
       });
       const d = await res.json();
       if (res.ok) setVerdictRes(d);
       else setVerdictRes({ error: d.detail ?? `HTTP ${res.status}` });
-    } catch { setVerdictRes({ error: `could not reach :8090` }); }
+    } catch { setVerdictRes({ error: "Could not reach personal stylist" }); }
   }, [API_BASE_PERSONAL_STYLIST, psHeaders]);
 
   const runWardrobe = useCallback(async () => {
@@ -383,7 +320,7 @@ export default function TodayScreen({
       const d = await res.json();
       if (res.ok) setWardrobeRes(d);
       else setWardrobeRes({ error: d.detail ?? `HTTP ${res.status}` });
-    } catch { setWardrobeRes({ error: `could not reach :8090` }); }
+    } catch { setWardrobeRes({ error: "Could not reach personal stylist" }); }
   }, [API_BASE_PERSONAL_STYLIST, psHeaders]);
 
   const runOutfit = useCallback(async () => {
@@ -395,7 +332,7 @@ export default function TodayScreen({
       const d = await res.json();
       if (res.ok) setOutfitRes(d);
       else setOutfitRes({ error: d.detail ?? `HTTP ${res.status}` });
-    } catch { setOutfitRes({ error: `could not reach :8090` }); }
+    } catch { setOutfitRes({ error: "Could not reach personal stylist" }); }
   }, [API_BASE_PERSONAL_STYLIST, psHeaders]);
 
   const runShadeMatch = useCallback(async () => {
@@ -407,7 +344,7 @@ export default function TodayScreen({
       const d = await res.json();
       if (res.ok) setShadeMatchRes(d);
       else setShadeMatchRes({ error: d.detail ?? `HTTP ${res.status}` });
-    } catch { setShadeMatchRes({ error: `could not reach :8090` }); }
+    } catch { setShadeMatchRes({ error: "Could not reach personal stylist" }); }
   }, [API_BASE_PERSONAL_STYLIST, psHeaders]);
 
   const runSizeHint = useCallback(async () => {
@@ -426,7 +363,7 @@ export default function TodayScreen({
       const d = await res.json();
       if (res.ok) setSizeHintRes(d);
       else setSizeHintRes({ error: d.detail ?? `HTTP ${res.status}` });
-    } catch { setSizeHintRes({ error: `could not reach :8090` }); }
+    } catch { setSizeHintRes({ error: "Could not reach personal stylist" }); }
   }, [API_BASE_PERSONAL_STYLIST, psHeaders]);
 
   const runTryOnPrompt = useCallback(async () => {
@@ -440,506 +377,480 @@ export default function TodayScreen({
       const d = await res.json();
       if (res.ok) setTryOnPromptRes(d);
       else setTryOnPromptRes({ error: d.detail ?? `HTTP ${res.status}` });
-    } catch { setTryOnPromptRes({ error: `could not reach :8090` }); }
+    } catch { setTryOnPromptRes({ error: "Could not reach personal stylist" }); }
   }, [API_BASE_PERSONAL_STYLIST, psHeaders]);
 
-  /* The see-it-on-me prompt is built by the server, not here. It has to describe the same
-     garments the tiles claim — same colour words, same neckline, same silhouette — and a second
-     copy of that assembly in the UI would be a second thing to drift. */
   const avatarPrompt = data?.avatar_prompt;
 
-  return (
-    <View style={s.root}>
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+  const week = useMemo(() => weekDays(new Date()), []);
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
-        {/* top bar */}
-        <View style={s.topbar}>
-          <View style={s.topSide}>
-            <Ionicons name="calendar-outline" size={21} color={C.ink} />
-            <View style={s.streak}>
-              <Ionicons name="flame" size={15} color={C.rose} />
-              <Text style={s.streakN}>{data ? 1 : 0}</Text>
+  return (
+    <SafeAreaView style={styles.root}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingTop: insets.top + space.md, paddingBottom: insets.bottom + space.xxxl + layout.navHeight },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+
+        {/* Top bar */}
+        <View style={styles.topbar}>
+          <View style={styles.topLeft}>
+            <Ionicons name="calendar" size={24} color={colors.ink} />
+            <View style={styles.streak}>
+              <Ionicons name="flame" size={16} color={colors.accent} />
+              <Text style={styles.streakN}>{data ? 1 : 0}</Text>
             </View>
           </View>
-          <Text style={s.wordmark}>ALTIER</Text>
-          <View style={s.topSide}>
-            <Ionicons name="help-circle-outline" size={21} color={C.ink} />
-            <View>
-              <Ionicons name="notifications-outline" size={21} color={C.ink} />
-              <View style={s.bellDot} />
+          <Text style={styles.wordmark}>ALTIER</Text>
+          <View style={styles.topRight}>
+            <Ionicons name="help-circle" size={24} color={colors.ink} />
+            <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs }}>
+              <Ionicons name="notifications" size={24} color={colors.ink} />
+              <View style={styles.bellDot} />
             </View>
           </View>
         </View>
 
-        {/* week strip */}
-        <View style={s.week}>
+        {/* Week strip */}
+        <View style={styles.week}>
           {week.map((day) => (
-            <View key={day.key} style={s.day}>
-              <Text style={[s.dayLabel, day.isToday && s.dayLabelOn]}>{day.label}</Text>
-              <Text style={[s.dayNum, day.isToday && s.dayNumOn]}>{day.n}</Text>
-              <View style={[s.dayTile, day.isFuture && s.dayTileGhost]}>
+            <View key={day.key} style={styles.day}>
+              <Text style={[styles.dayLabel, day.isToday && styles.dayLabelOn]}>{day.label}</Text>
+              <Text style={[styles.dayNum, day.isToday && styles.dayNumOn]}>{day.n}</Text>
+              <View style={[styles.dayTile, day.isFuture && styles.dayTileGhost]}>
                 {day.isToday && data
                   ? data.pieces.slice(0, 4).map((p, i) => (
-                      <View key={i} style={[s.dayChip, { backgroundColor: p.colors[0] ?? C.pink2 }]} />
+                      <View key={i} style={[styles.dayChip, { backgroundColor: p.colors[0] ?? colors.line }]} />
                     ))
                   : null}
               </View>
-              {day.isToday && <View style={s.dayUnderline} />}
+              {day.isToday && <View style={styles.dayUnderline} />}
             </View>
           ))}
         </View>
 
-        {/* the wish pill — "Ask Alta" in the reference */}
-        <View style={s.askPill}>
-          <Ionicons name="sparkles-outline" size={17} color={C.roseDark} />
+        {/* Wish pill */}
+        <View style={styles.askPill}>
+          <Ionicons name="sparkles" size={20} color={colors.accent} />
           <TextInput
-            style={s.askInput}
+            style={styles.askInput}
             value={special}
             onChangeText={setSpecial}
             onSubmitEditing={fetchToday}
             returnKeyType="search"
             placeholder="Ask ALTIER — something special?"
-            placeholderTextColor={C.muted}
+            placeholderTextColor={colors.quiet}
           />
           {special.length > 0 && (
-            <Pressable onPress={fetchToday} hitSlop={8}>
-              <Ionicons name="arrow-forward-circle" size={24} color={C.ink} />
+            <Pressable onPress={fetchToday} hitSlop={space.sm}>
+              <Ionicons name="arrow-forward-circle" size={28} color={colors.ink} />
             </Pressable>
           )}
         </View>
 
-        {/* greeting + her vibe, in place of the weather slot */}
-        <View style={s.greetRow}>
-          <Text style={s.greet}>{greeting},{"\n"}{userName}</Text>
-          <View style={s.vibeBox}>
-            <Text style={s.vibeLabel}>YOUR VIBE</Text>
-            <Text style={s.vibePhrase} numberOfLines={2}>
-              {vibe?.confirmed?.phrase || vibe?.proposal?.phrase || "not yet"}
+        {/* Greeting + vibe */}
+        <View style={styles.greetRow}>
+          <Text style={styles.greet}>{greeting}\n{userName}</Text>
+          <View style={styles.vibeBox}>
+            <Text style={styles.vibeLabel}>YOUR VIBE</Text>
+            <Text style={styles.vibePhrase} numberOfLines={2}>
+              {vibe?.confirmed?.phrase || vibe?.proposal?.phrase || "Not yet"}
             </Text>
-            {/* Interpretation, and it is editable. It never overrides a measured read. */}
-            <Text style={s.vibeTag}>your read · tap to edit</Text>
+            <Text style={styles.vibeTag}>Your read · tap to edit</Text>
           </View>
         </View>
 
-        {/* occasion */}
-        <Text style={s.sectionLabel}>WHAT'S THE OCCASION?</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.pillRow}>
+        {/* Occasion */}
+        <Text style={styles.sectionLabel}>Occasion</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillRow}>
           {OCCASIONS.map((o) => (
-            <Pressable key={o} onPress={() => setOccasion(o)} style={[s.pill, occasion === o && s.pillOn]}>
-              <Text style={[s.pillTxt, occasion === o && s.pillTxtOn]}>{o}</Text>
+            <Pressable key={o} onPress={() => { setOccasion(o); LayoutAnimation.configureNext(LayoutAnimation.create(
+              Theme.motion.durations.fast, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity
+            )); }} style={[styles.pill, occasion === o && styles.pillOn]}>
+              <Text style={[styles.pillText, occasion === o && styles.pillTextOn]}>{o}</Text>
             </Pressable>
           ))}
         </ScrollView>
 
-        {/* mood */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.chipRow}>
+        {/* Mood */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
           {MOODS.map((m) => (
-            <Pressable key={m} onPress={() => setMood(mood === m ? null : m)} style={[s.chip, mood === m && s.chipOn]}>
-              <Text style={[s.chipTxt, mood === m && s.chipTxtOn]}>{m}</Text>
+            <Pressable key={m} onPress={() => { setMood(mood === m ? null : m); LayoutAnimation.configureNext(LayoutAnimation.create(
+              Theme.motion.durations.fast, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity
+            )); }} style={[styles.chip, mood === m && styles.chipOn]}>
+              <Text style={[styles.chipText, mood === m && styles.chipTextOn]}>{m}</Text>
             </Pressable>
           ))}
         </ScrollView>
 
         {loading && (
-          <View style={s.skeletonWrap}>
-            <View style={s.skeletonRow}>
-              <View style={[s.skeleton, { height: 165 }]} />
-              <View style={[s.skeleton, { height: 165 }]} />
+          <View style={styles.skeletonWrap}>
+            <View style={styles.skeletonRow}>
+              <View style={[styles.skeleton, { height: 165 }]} />
+              <View style={[styles.skeleton, { height: 165 }]} />
             </View>
-            <ActivityIndicator color={C.roseDark} />
+            <ActivityIndicator color={colors.accent} />
           </View>
         )}
 
         {error && !loading && (
-          <View style={s.card}>
-            <Text style={s.cardTitle}>Nothing to show</Text>
-            <Text style={s.footnote}>{error}</Text>
-            <Pressable onPress={fetchToday} style={s.blackBtn}>
-              <Text style={s.blackBtnTxt}>Try again</Text>
-            </Pressable>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Nothing to show</Text>
+            <Text style={styles.footnote}>{error}</Text>
+            <TouchableOpacity onPress={fetchToday} style={styles.primaryBtn}>
+              <Text style={styles.primaryBtnText}>Try again</Text>
+            </TouchableOpacity>
           </View>
         )}
 
         {data && !loading && data.pieces.length === 0 && (
-          <View style={s.card}>
-            <Text style={s.cardTitle}>Nothing matched</Text>
-            <Text style={s.footnote}>Loosen the occasion, or clear what you asked for.</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Nothing matched</Text>
+            <Text style={styles.footnote}>Loosen the occasion, or clear what you asked for.</Text>
           </View>
         )}
 
         {data && !loading && data.pieces.length > 0 && (
           <>
-            <Text style={s.lookTitle}>{data.look.title}</Text>
+            <Text style={styles.lookTitle}>{data.look.title}</Text>
 
-            {/* THE FLAT-LAY — each garment its own cut-out tile, never worn on a body */}
-            <View style={s.flatlay}>
+            {/* Flat-lay grid */}
+            <View style={styles.flatlay}>
               {data.pieces.map((piece, i) => (
-                <View key={`${piece.slot}-${i}`} style={s.tile}>
-                  <View style={[s.tileImage, { height: TILE_HEIGHT[piece.slot] ?? 165 }]}>
+                <TouchableOpacity
+                  key={`${piece.slot}-${i}`}
+                  style={styles.tile}
+                >
+                  <View style={[styles.tileImage, { height: TILE_HEIGHT[piece.slot] ?? 165 }]}>
                     {piece.image_url ? (
-                      <Image source={{ uri: piece.image_url }} style={s.tileImg} resizeMode="contain" />
+                      <Image source={{ uri: piece.image_url }} style={styles.tileImg} resizeMode="contain" />
                     ) : (
-                      /* No image API and no live search result yet. The garment's colour
-                         stands in — never a broken frame, never an invented photograph. */
                       piece.colors.map((hex, j) => (
-                        <View key={j} style={[s.tileBand, { backgroundColor: hex }]} />
+                        <View key={j} style={[styles.tileBand, { backgroundColor: hex }]} />
                       ))
                     )}
                   </View>
-                  <Text style={s.tileSlot}>{SLOT_LABEL[piece.slot] ?? piece.slot}</Text>
-                  <Text style={s.tileName} numberOfLines={2}>{piece.name}</Text>
+                  <Text style={styles.tileSlot}>{SLOT_LABEL[piece.slot] ?? piece.slot}</Text>
+                  <Text style={styles.tileName} numberOfLines={2}>{piece.name}</Text>
 
-                  {/* Exactly what ALTIER looked for. Without these the tile says "a top" and
-                      the reader has no way to tell what was actually asked for. */}
                   {piece.attributes && (
-                    <View style={s.attrRow}>
+                    <View style={styles.attrRow}>
                       {(["colour", "neckline", "waist", "silhouette"] as const)
                         .map((k) => piece.attributes?.[k])
                         .filter((v): v is string => Boolean(v))
                         .map((v) => (
-                          <View key={v} style={s.attrChip}>
-                            <Text style={s.attrTxt}>{v.replace(/-/g, " ")}</Text>
+                          <View key={v} style={styles.attrChip}>
+                            <Text style={styles.attrText}>{v.replace(/-/g, " ")}</Text>
                           </View>
                         ))}
                     </View>
                   )}
 
                   {piece.price_text && (
-                    <Text style={s.tilePrice}>
+                    <Text style={styles.tilePrice}>
                       {piece.price_text}{piece.retailer ? ` · ${piece.retailer}` : ""}
                     </Text>
                   )}
                   {piece.product_link && (
-                    <Pressable onPress={() => Linking.openURL(piece.product_link!)} style={s.buyBtn}>
-                      <Text style={s.buyTxt}>Buy</Text>
+                    <Pressable onPress={() => Linking.openURL(piece.product_link!)} style={styles.buyBtn}>
+                      <Text style={styles.buyText}>Buy</Text>
                     </Pressable>
                   )}
-                  {/* The query asked for these; the retailer's text matched. Nobody checked
-                      the garment. Saying so is not optional. */}
                   {piece.verified === false && piece.as_searched && (
-                    <Text style={s.asSearched}>as searched, not verified</Text>
+                    <Text style={styles.asSearched}>As searched, not verified</Text>
                   )}
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
 
-            {/* see it on me — manual handoff, by design */}
-            <Pressable onPress={() => setShowPrompt(!showPrompt)} style={s.blackBtnWide}>
-              <Ionicons name="sparkles" size={16} color="#fff" />
-              <Text style={s.blackBtnTxt}>See it on me</Text>
-            </Pressable>
+            {/* See it on me */}
+            <TouchableOpacity
+              onPress={() => setShowPrompt(true)}
+              style={styles.secondaryBtnWide}
+            >
+              <Ionicons name="sparkles" size={18} color={colors.ink} />
+              <Text style={styles.secondaryBtnText}>See it on me</Text>
+            </TouchableOpacity>
             {showPrompt && avatarPrompt && (
-              <View style={s.card}>
-                <Text style={s.kicker}>PASTE THIS INTO CHATGPT</Text>
-                <Text selectable style={s.promptTxt}>{avatarPrompt.prompt}</Text>
-                <Text style={s.footnote}>
-                  ALTIER has no image generator. Make the picture in the ChatGPT app and bring it
-                  back — then you can post it.
-                </Text>
-                {avatarPrompt.note && (
-                  <Text style={s.footnote}>{avatarPrompt.note}</Text>
-                )}
+              <View style={styles.promptOverlay} pointerEvents="auto">
+                <View style={styles.promptCard}>
+                  <View style={styles.promptHeader}>
+                    <Text style={styles.kicker}>Paste this into ChatGPT</Text>
+                    <TouchableOpacity onPress={() => setShowPrompt(false)}>
+                      <Ionicons name="close" size={24} color={colors.muted} />
+                    </TouchableOpacity>
+                  </View>
+                  <Text selectable style={styles.promptText}>{avatarPrompt.prompt}</Text>
+                  <Text style={styles.footnote}>
+                    ALTIER has no image generator. Make the picture in the ChatGPT app and bring it back.
+                  </Text>
+                  {avatarPrompt.note && <Text style={styles.footnote}>{avatarPrompt.note}</Text>}
+                </View>
               </View>
             )}
 
-            <View style={s.divider}>
-              <View style={s.dividerLine} />
-              <Text style={s.dividerTxt}>Today's suggestions</Text>
-              <View style={s.dividerLine} />
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>Today's suggestions</Text>
+              <View style={styles.dividerLine} />
             </View>
 
-            {/* why */}
-            <View style={s.card}>
-              <View style={s.rowBetween}>
-                <Text style={s.kicker}>WHY THIS</Text>
-                <Text style={s.badge}>
-                  {data.reason_source === "gemini" ? "phrased by ALTIER" : "from the numbers"}
+            {/* Why */}
+            <View style={styles.card}>
+              <View style={styles.rowBetween}>
+                <Text style={styles.kicker}>Why this</Text>
+                <Text style={styles.badge}>
+                  {data.reason_source === "gemini" ? "Phrased by ALTIER" : "From the numbers"}
                 </Text>
               </View>
-              <Text style={s.reason}>{data.reason}</Text>
+              <Text style={styles.reason}>{data.reason}</Text>
               {data.reason_source === "gemini" && (
-                <Text style={s.footnote}>
+                <Text style={styles.footnote}>
                   {data.reason_verbatim.copied} of {data.reason_verbatim.required} sentences were
                   written by the engines and copied word for word. The writing model added only:
                   "{data.reason_model_added}"
                 </Text>
               )}
               {data.reason_fallback && (
-                <Text style={s.footnote}>Written version not used: {data.reason_fallback}</Text>
+                <Text style={styles.footnote}>Written version not used: {data.reason_fallback}</Text>
               )}
 
-              <View style={s.voteRow}>
-                <Pressable onPress={() => sendFeedback(true)} style={[s.vote, voted === "up" && s.voteOn]}>
-                  <Text style={s.voteEmoji}>👍</Text><Text style={s.voteTxt}>This is me</Text>
-                </Pressable>
-                <Pressable onPress={() => sendFeedback(false)} style={[s.vote, voted === "down" && s.voteOn]}>
-                  <Text style={s.voteEmoji}>👎</Text><Text style={s.voteTxt}>Not me</Text>
-                </Pressable>
+              <View style={styles.voteRow}>
+                <TouchableOpacity
+                  onPress={() => { sendFeedback(true); LayoutAnimation.configureNext(LayoutAnimation.create(
+                    Theme.motion.durations.fast, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity
+                  )); }}
+                  style={[styles.vote, voted === "up" && styles.voteOn]}
+                >
+                  <Ionicons name="chevron-up" size={20} color={voted === "up" ? colors.accent : colors.muted} />
+                  <Text style={[styles.voteText, voted === "up" && styles.voteTextOn]}>This is me</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => { sendFeedback(false); LayoutAnimation.configureNext(LayoutAnimation.create(
+                    Theme.motion.durations.fast, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity
+                  )); }}
+                  style={[styles.vote, voted === "down" && styles.voteOn]}
+                >
+                  <Ionicons name="chevron-down" size={20} color={voted === "down" ? colors.negative : colors.muted} />
+                  <Text style={[styles.voteText, voted === "down" && styles.voteTextOn]}>Not me</Text>
+                </TouchableOpacity>
               </View>
-              {voted && <Text style={s.footnote}>Noted. That is you naming your taste, not tuning a model.</Text>}
+              {voted && <Text style={styles.footnote}>Noted. That is you naming your taste, not tuning a model.</Text>}
             </View>
 
-            {/* dissent — a rule that disagrees speaks, it does not veto */}
+            {/* Dissent */}
             {data.dissent?.filter((d) => d.overruled_by_taste).map((d) => (
-              <View key={d.rule_id} style={[s.card, s.dissentCard]}>
-                <Text style={s.kicker}>A CONVENTION DISAGREES</Text>
-                <Text style={s.reason}>{d.reason}</Text>
-                <Text style={s.footnote}>
+              <View key={d.rule_id} style={[styles.card, styles.dissentCard]}>
+                <Text style={styles.kicker}>A convention disagrees</Text>
+                <Text style={styles.reason}>{d.reason}</Text>
+                <Text style={styles.footnote}>
                   {d.source} · confidence {Math.round(d.confidence * 100)}%. You keep choosing
                   looks like this, so it stays. This is an opinion, not a rule.
                 </Text>
               </View>
             ))}
 
-            {/* palette */}
-            <View style={s.card}>
-              <Text style={s.kicker}>YOUR COLOURS · MEASURED</Text>
-              <View style={s.swatchWrap}>
+            {/* Palette */}
+            <View style={styles.card}>
+              <Text style={styles.kicker}>Your colours · measured</Text>
+              <View style={styles.swatchWrap}>
                 {data.palette_swatches.map((sw) => (
-                  <View key={sw.hex} style={s.swatchCol}>
-                    <View style={[s.swatch, { backgroundColor: sw.hex }]} />
-                    <Text style={s.swatchName} numberOfLines={1}>{sw.name}</Text>
+                  <View key={sw.hex} style={styles.swatchCol}>
+                    <View style={[styles.swatch, { backgroundColor: sw.hex }]} />
+                    <Text style={styles.swatchName} numberOfLines={1}>{sw.name}</Text>
                   </View>
                 ))}
               </View>
-              {data.palette_guidance && <Text style={s.guidance}>{data.palette_guidance}</Text>}
+              {data.palette_guidance && <Text style={styles.guidance}>{data.palette_guidance}</Text>}
             </View>
 
-            {/* her read — self-knowledge, not a verdict */}
-            <View style={s.card}>
-              <Text style={s.kicker}>WHAT YOU'RE MADE OF · MEASURED</Text>
-              <Text style={s.readLine}>{data.coloring.line}</Text>
+            {/* Her read */}
+            <View style={styles.card}>
+              <Text style={styles.kicker}>What you're made of · measured</Text>
+              <Text style={styles.readLine}>{data.coloring.line}</Text>
               {data.coloring.note && (
-                <View style={s.borderline}>
-                  <Text style={s.borderlineTitle}>This one was close</Text>
-                  <Text style={s.borderlineTxt}>{data.coloring.note}</Text>
+                <View style={styles.borderline}>
+                  <Text style={styles.borderlineTitle}>This one was close</Text>
+                  <Text style={styles.borderlineText}>{data.coloring.note}</Text>
                 </View>
               )}
-              <Text style={s.footnote}>
+              <Text style={styles.footnote}>
                 Measured from your photo — CIELAB hue angle and ITA. Facts about you to build on,
                 not a verdict on what suits you.
               </Text>
 
               {data.face_shape?.shape ? (
                 <>
-                  <View style={s.hr} />
-                  <Text style={s.readLine}>{data.face_shape.shape} face</Text>
-                  <Text style={s.footnote}>
+                  <View style={styles.hr} />
+                  <Text style={styles.readLine}>{data.face_shape.shape} face</Text>
+                  <Text style={styles.footnote}>
                     From four ratios measured off your face mesh. The ratios are reliable; which
                     of seven words they become is a convention with uncalibrated cut points, and
                     this one is held at {Math.round((data.face_shape.confidence ?? 0) * 100)}%.
                   </Text>
-                  {data.face_shape.features ? (
+                  {data.face_shape.features && (
                     <FaceFeatureRows features={data.face_shape.features} />
-                  ) : null}
+                  )}
                 </>
               ) : null}
 
-              <View style={s.hr} />
-              <Text style={s.readLine}>{data.body.line}</Text>
+              <View style={styles.hr} />
+              <Text style={styles.readLine}>{data.body.line}</Text>
               {data.body.size_estimate && (
-                <View style={s.estimate}>
-                  <Text style={s.estimateTitle}>Rough estimate — not a measurement</Text>
+                <View style={styles.estimate}>
+                  <Text style={styles.estimateTitle}>Rough estimate — not a measurement</Text>
                   {Object.entries(data.body.size_estimate.cm).map(([part, cm]) => {
                     const range = data.body.size_estimate!.cm_range[part];
                     return (
-                      <Text key={part} style={s.estimateLine}>
+                      <Text key={part} style={styles.estimateLine}>
                         {part.replace(/_/g, " ")}: about {cm} cm ({range[0]}–{range[1]})
                       </Text>
                     );
                   })}
-                  <Text style={s.estimateNote}>{data.body.size_estimate.notes[0]}</Text>
+                  <Text style={styles.estimateNote}>{data.body.size_estimate.notes[0]}</Text>
                 </View>
               )}
             </View>
 
-            {/* the rules — evidence, with sources */}
+            {/* Rules */}
             {data.rules_applied.length > 0 && (
-              <View style={s.card}>
-                <Pressable onPress={() => setShowRules(!showRules)} style={s.rowBetween}>
-                  <Text style={s.kicker}>THE EVIDENCE · CONVENTION</Text>
-                  <Ionicons name={showRules ? "chevron-up" : "chevron-down"} size={17} color={C.muted} />
-                </Pressable>
-                <Text style={s.footnote}>
+              <View style={styles.card}>
+                <TouchableOpacity
+                  onPress={() => { setShowRules(!showRules); LayoutAnimation.configureNext(LayoutAnimation.create(
+                    Theme.motion.durations.normal, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity
+                  )); }}
+                  style={styles.rowBetween}
+                >
+                  <Text style={styles.kicker}>The evidence · convention</Text>
+                  <Ionicons name={showRules ? "chevron-up" : "chevron-down"} size={20} color={colors.muted} />
+                </TouchableOpacity>
+                <Text style={styles.footnote}>
                   Styling convention, not fact. No study backs any of it, and your thumbs move
                   these numbers.
                 </Text>
                 {showRules && data.rules_applied.map((r) => (
-                  <View key={r.id} style={s.rule}>
-                    <View style={s.rowBetween}>
-                      <Text style={s.ruleAttr}>{r.attribute}</Text>
-                      <Text style={s.ruleConf}>{Math.round(r.confidence * 100)}%</Text>
+                  <View key={r.id} style={styles.rule}>
+                    <View style={styles.rowBetween}>
+                      <Text style={styles.ruleAttr}>{r.attribute}</Text>
+                      <Text style={styles.ruleConf}>{Math.round(r.confidence * 100)}%</Text>
                     </View>
-                    <Text style={s.ruleTxt}>{r.recommends}</Text>
-                    <Text style={s.ruleMeta}>{r.source} · assumes: {r.goal}</Text>
+                    <Text style={styles.ruleText}>{r.recommends}</Text>
+                    <Text style={styles.ruleMeta}>{r.source} · assumes: {r.goal}</Text>
                   </View>
                 ))}
               </View>
             )}
 
             <AdviceCard
-              kicker="HAIR · CONVENTION"
-              standing={"From a standard cosmetology textbook (Milady Ch.14). Widely taught, and "
-                + "supported by no study. It optimises for the illusion of an oval face, which "
-                + "is an aesthetic position you are free to reject."}
+              kicker="Hair · convention"
+              standing="From a standard cosmetology textbook (Milady Ch.14). Widely taught, and supported by no study. It optimises for the illusion of an oval face, which is an aesthetic position you are free to reject."
               advice={data.hairstyle}
               emptyLabel="No hair advice yet — your face shape has not been read."
             />
 
             <AdviceCard
-              kicker="POSE · UNSOURCED"
-              standing={"The least grounded advice here. Studio practice passed on by "
-                + "demonstration, with no standard text and no study behind it — which is why "
-                + "these numbers sit below everything else on this page. Easy to test in a "
-                + "mirror, and your thumbs should outweigh it quickly."}
+              kicker="Pose · unsourced"
+              standing="The least grounded advice here. Studio practice passed on by demonstration, with no standard text and no study behind it — which is why these sit below everything else on this page. Easy to test in a mirror, and your thumbs should outweigh it quickly."
               advice={data.pose}
               emptyLabel="No posing advice for this profile yet."
             />
 
             <AdviceCard
-              kicker="ACCESSORIES · MIXED"
-              standing={"Metal temperature keys on your MEASURED undertone. Everything else keys "
-                + "on your vibe, which is itself an interpretation — so those are the least "
-                + "confident suggestions ALTIER makes, and each line says which it is."}
+              kicker="Accessories · mixed"
+              standing="Metal temperature keys on your measured undertone. Everything else keys on your vibe, which is itself an interpretation — so those are the least confident suggestions ALTIER makes, and each line says which it is."
               advice={data.accessory}
               emptyLabel="Nothing to suggest here yet."
             />
 
-            {/* the point of the app */}
+            {/* Convergence */}
             {convergence && (
-              <View style={s.card}>
-                <Text style={s.kicker}>HOW CLEAR YOUR TASTE IS GETTING</Text>
-                <Text style={s.reason}>{convergence.headline}</Text>
-                <Text style={s.footnote}>
+              <View style={styles.card}>
+                <Text style={styles.kicker}>How clear your taste is getting</Text>
+                <Text style={styles.reason}>{convergence.headline}</Text>
+                <Text style={styles.footnote}>
                   A rough read, not a score of you. It tracks whether you are changing your mind
                   less, not whether you use the app more.
                 </Text>
               </View>
             )}
 
-            {/* Product tools — personal stylist endpoints */}
-            <View style={s.card}>
-              <Text style={s.kicker}>PRODUCT TOOLS · PERSONAL STYLIST</Text>
-              <Text style={s.footnote}>
+            {/* Product tools */}
+            <View style={styles.card}>
+              <Text style={styles.kicker}>Product tools · personal stylist</Text>
+              <Text style={styles.footnote}>
                 Buy/caution/skip verdicts, wardrobe management, outfit building, shade matching,
                 size hints, and try-on prompts. Powered by the personal-stylist API on :8090.
               </Text>
-              <View style={s.toolRow}>
-                <Pressable onPress={runVerdict} style={s.toolBtn}>
-                  <Text style={s.toolBtnTxt}>Verdict</Text>
-                </Pressable>
-                <Pressable onPress={runWardrobe} style={s.toolBtn}>
-                  <Text style={s.toolBtnTxt}>Wardrobe</Text>
-                </Pressable>
-                <Pressable onPress={runOutfit} style={s.toolBtn}>
-                  <Text style={s.toolBtnTxt}>Outfit</Text>
-                </Pressable>
-                <Pressable onPress={runShadeMatch} style={s.toolBtn}>
-                  <Text style={s.toolBtnTxt}>Shade Match</Text>
-                </Pressable>
-                <Pressable onPress={runSizeHint} style={s.toolBtn}>
-                  <Text style={s.toolBtnTxt}>Size Hint</Text>
-                </Pressable>
-                <Pressable onPress={runTryOnPrompt} style={s.toolBtn}>
-                  <Text style={s.toolBtnTxt}>Try-on Prompt</Text>
-                </Pressable>
+              <View style={styles.toolRow}>
+                <TouchableOpacity onPress={runVerdict} style={styles.toolBtn}>
+                  <Text style={styles.toolBtnText}>Verdict</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={runWardrobe} style={styles.toolBtn}>
+                  <Text style={styles.toolBtnText}>Wardrobe</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={runOutfit} style={styles.toolBtn}>
+                  <Text style={styles.toolBtnText}>Outfit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={runShadeMatch} style={styles.toolBtn}>
+                  <Text style={styles.toolBtnText}>Shade Match</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={runSizeHint} style={styles.toolBtn}>
+                  <Text style={styles.toolBtnText}>Size Hint</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={runTryOnPrompt} style={styles.toolBtn}>
+                  <Text style={styles.toolBtnText}>Try-on Prompt</Text>
+                </TouchableOpacity>
               </View>
-              {verdictRes && (
-                <View style={s.toolResult}>
-                  <Text style={s.toolResultTitle}>Verdict: {verdictRes.verdict}</Text>
-                  <Text style={s.toolResultText}>
-                    Match {verdictRes.match_pct}% · {verdictRes.risk_count} risk signal(s) · {verdictRes.route}
-                  </Text>
-                  {verdictRes.reasons?.slice(1).map((r: any) => (
-                    <Text key={r.signal} style={s.toolResultReason}>
-                      [{r.severity}] {r.reason}
-                    </Text>
-                  ))}
-                </View>
-              )}
-              {wardrobeRes && (
-                <View style={s.toolResult}>
-                  <Text style={s.toolResultTitle}>Wardrobe</Text>
-                  <Text style={s.toolResultText}>
-                    {wardrobeRes.active_count} active · {wardrobeRes.near_duplicates.length} near-duplicates ·
-                    Gaps: {wardrobeRes.gaps.map((g: any) => g.slot).join(", ") || "none"}
-                  </Text>
-                </View>
-              )}
-              {outfitRes && (
-                <View style={s.toolResult}>
-                  <Text style={s.toolResultTitle}>Outfit Builder</Text>
-                  <Text style={s.toolResultText}>
-                    {outfitRes.outfits.length} outfit(s) from {outfitRes.wardrobe_size} wardrobe items
-                  </Text>
-                </View>
-              )}
-              {shadeMatchRes && (
-                <View style={s.toolResult}>
-                  <Text style={s.toolResultTitle}>Shade Match</Text>
-                  <Text style={s.toolResultText}>
-                    {shadeMatchRes.match_quality || "none"} · ΔE {shadeMatchRes.delta_e ?? "—"}
-                  </Text>
-                  <Text style={s.toolResultReason}>{shadeMatchRes.recommendation || ""}</Text>
-                </View>
-              )}
-              {sizeHintRes && (
-                <View style={s.toolResult}>
-                  <Text style={s.toolResultTitle}>Size Hint</Text>
-                  <Text style={s.toolResultText}>
-                    {sizeHintRes.suggested_size ?? "none"} · {sizeHintRes.based_on_events} event(s) ·
-                    {sizeHintRes.confidence}
-                  </Text>
-                </View>
-              )}
-              {tryOnPromptRes && (
-                <View style={s.toolResult}>
-                  <Text style={s.toolResultTitle}>Try-on Prompt</Text>
-                  <Text style={s.toolResultText} numberOfLines={2}>
-                    {tryOnPromptRes.prompt?.slice(0, 120)}…
-                  </Text>
-                </View>
-              )}
+              {verdictRes && <View style={styles.toolResult}><Text style={styles.toolResultTitle}>Verdict: {verdictRes.verdict}</Text><Text style={styles.toolResultText}>Match {verdictRes.match_pct}% · {verdictRes.risk_count} risk signal(s) · {verdictRes.route}</Text>{verdictRes.reasons?.slice(1).map((r: any) => <Text key={r.signal} style={styles.toolResultReason}>[{r.severity}] {r.reason}</Text>)}</View>}
+              {wardrobeRes && <View style={styles.toolResult}><Text style={styles.toolResultTitle}>Wardrobe</Text><Text style={styles.toolResultText}>{wardrobeRes.active_count} active · {wardrobeRes.near_duplicates.length} near-duplicates · Gaps: {wardrobeRes.gaps.map((g: any) => g.slot).join(", ") || "none"}</Text></View>}
+              {outfitRes && <View style={styles.toolResult}><Text style={styles.toolResultTitle}>Outfit Builder</Text><Text style={styles.toolResultText}>{outfitRes.outfits.length} outfit(s) from {outfitRes.wardrobe_size} wardrobe items</Text></View>}
+              {shadeMatchRes && <View style={styles.toolResult}><Text style={styles.toolResultTitle}>Shade Match</Text><Text style={styles.toolResultText}>{shadeMatchRes.match_quality || "none"} · ΔE {shadeMatchRes.delta_e ?? "—"}</Text><Text style={styles.toolResultReason}>{shadeMatchRes.recommendation || ""}</Text></View>}
+              {sizeHintRes && <View style={styles.toolResult}><Text style={styles.toolResultTitle}>Size Hint</Text><Text style={styles.toolResultText}>{sizeHintRes.suggested_size ?? "none"} · {sizeHintRes.based_on_events} event(s) · {sizeHintRes.confidence}</Text></View>}
+              {tryOnPromptRes && <View style={styles.toolResult}><Text style={styles.toolResultTitle}>Try-on Prompt</Text><Text style={styles.toolResultText} numberOfLines={2}>{tryOnPromptRes.prompt?.slice(0, 120)}…</Text></View>}
             </View>
 
-            <Text style={s.poolNote}>{data.pool.note}</Text>
-            {data.pool.occasion_filter?.note && <Text style={s.poolNote}>{data.pool.occasion_filter.note}</Text>}
+            <Text style={styles.poolNote}>{data.pool.note}</Text>
+            {data.pool.occasion_filter?.note && <Text style={styles.poolNote}>{data.pool.occasion_filter.note}</Text>}
             {!data.taste.available && (
-              <Text style={s.poolNote}>
+              <Text style={styles.poolNote}>
                 Your own taste is not in this yet. Upload pins and ALTIER will lead with what you save.
               </Text>
             )}
           </>
         )}
 
-        {/* Ask ALTIER — outside the data block on purpose: it works before onboarding too */}
-        <View style={s.card}>
-          <Text style={s.kicker}>ASK ALTIER · CITED OR REFUSED</Text>
-          <Text style={s.footnote}>
+        {/* Ask ALTIER */}
+        <View style={styles.card}>
+          <Text style={styles.kicker}>Ask ALTIER · cited or refused</Text>
+          <Text style={styles.footnote}>
             Answers come only from the sourced rule bases, every sentence cited and every citation
             checked. A question they cannot answer is refused, not improvised.
           </Text>
-          <View style={s.askRow}>
+          <View style={styles.askRow}>
             <TextInput
-              style={s.askField}
+              style={styles.askField}
               value={askQ}
               onChangeText={setAskQ}
               onSubmitEditing={askAltier}
               returnKeyType="send"
               placeholder="e.g. which necklines suit me, and why?"
-              placeholderTextColor={C.muted}
+              placeholderTextColor={colors.quiet}
             />
-            <Pressable onPress={askAltier} hitSlop={8} disabled={asking}>
-              <Ionicons name={asking ? "hourglass-outline" : "arrow-forward-circle"} size={26} color={C.ink} />
-            </Pressable>
+            <TouchableOpacity onPress={askAltier} hitSlop={space.sm} disabled={asking}>
+              <Ionicons name={asking ? "hourglass" : "arrow-forward-circle"} size={28} color={colors.ink} />
+            </TouchableOpacity>
           </View>
           {askRes && (
             <>
-              <Text style={s.reason}>{askRes.answer}</Text>
+              <Text style={styles.reason}>{askRes.answer}</Text>
               {askRes.citations.map((c) => (
-                <Text key={c.n} style={s.ruleMeta}>[{c.n}] {c.title}{c.section ? ` › ${c.section}` : ""}</Text>
+                <Text key={c.n} style={styles.ruleMeta}>[{c.n}] {c.title}{c.section ? ` › ${c.section}` : ""}</Text>
               ))}
-              <Text style={s.footnote}>
+              <Text style={styles.footnote}>
                 {askRes.source === "gemini"
                   ? "Written by the model from the cited sources; citations verified."
                   : askRes.source === "retrieval-only"
@@ -951,43 +862,40 @@ export default function TodayScreen({
           )}
         </View>
 
-        <View style={{ height: 28 }} />
+        <View style={{ height: space.xxxl }} />
       </ScrollView>
 
-      {/* bottom nav — five slots, black circle in the middle, as in the reference */}
-      <View style={s.nav}>
-        <Ionicons name="home" size={23} color={C.ink} />
-        <Ionicons name="shirt-outline" size={23} color={C.muted} />
-        <View style={s.navPlus}><Ionicons name="add" size={26} color="#fff" /></View>
-        <Ionicons name="search-outline" size={23} color={C.muted} />
+      {/* Bottom nav */}
+      <View style={styles.nav}>
+        <Ionicons name="home" size={26} color={colors.ink} />
+        <Ionicons name="shirt" size={26} color={colors.muted} />
+        <View style={styles.navPlus}><Ionicons name="add" size={28} color="#fff" /></View>
+        <Ionicons name="search" size={26} color={colors.muted} />
         {avatarUri
-          ? <Image source={{ uri: avatarUri }} style={s.navAvatar} />
-          : <View style={s.navAvatarEmpty}><Text style={s.navAvatarTxt}>{userName.charAt(0).toUpperCase()}</Text></View>}
-        {onProfile ? <TouchableOpacity onPress={onProfile} style={s.navProfileBtn} /> : null}
+          ? <Image source={{ uri: avatarUri }} style={styles.navAvatar} />
+          : <View style={styles.navAvatarEmpty}><Text style={styles.navAvatarText}>{userName.charAt(0).toUpperCase()}</Text></View>}
+        {onProfile ? <TouchableOpacity onPress={onProfile} style={styles.navProfileBtn} /> : null}
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
-/** The measured facial features, shown as material rather than as a judgement.
- *
- *  Nothing here recommends anything and no advice engine keys on them — they are the raw facts
- *  of her face, which is what Page 1 is supposed to hand her. Features pinned to a clamp bound
- *  are struck through, because they describe the constant inside the measuring code rather than
- *  describing her. */
+/* ---------------- FaceFeatureRows ---------------- */
+
 function FaceFeatureRows({ features }: { features: FaceFeatures }) {
+  const { colors, space, radius, type, shadows } = Theme;
   const groups: (keyof Omit<FaceFeatures, "saturated">)[] = ["eyes", "brows", "cheeks", "lips"];
   return (
-    <View style={s.features}>
+    <View style={styles.features}>
       {groups.map((group) => (
-        <View key={group} style={s.featureRow}>
-          <Text style={s.featureGroup}>{group}</Text>
-          <View style={s.featureChips}>
+        <View key={group} style={styles.featureRow}>
+          <Text style={styles.featureGroup}>{group}</Text>
+          <View style={styles.featureChips}>
             {Object.entries(features[group]).map(([key, value]) => {
               const dead = features.saturated.includes(`${group}.${key}`);
               return (
-                <View key={key} style={[s.featureChip, dead && s.featureChipDead]}>
-                  <Text style={[s.featureTxt, dead && s.featureTxtDead]}>
+                <View key={key} style={[styles.featureChip, dead && styles.featureChipDead]}>
+                  <Text style={[styles.featureText, dead && styles.featureTextDead]}>
                     {key.replace(/_/g, " ")} {value}
                   </Text>
                 </View>
@@ -997,7 +905,7 @@ function FaceFeatureRows({ features }: { features: FaceFeatures }) {
         </View>
       ))}
       {features.saturated.length > 0 && (
-        <Text style={s.footnote}>
+        <Text style={styles.footnote}>
           Struck-through values sat on a measurement limit, so they describe the measuring code
           rather than your face. Ignore them.
         </Text>
@@ -1006,15 +914,8 @@ function FaceFeatureRows({ features }: { features: FaceFeatures }) {
   );
 }
 
-/** The three advice engines render through ONE component on purpose.
- *
- *  They differ in exactly one thing that matters — how much is behind them — and that
- *  difference is carried by `standing` and by each rule's own confidence, not by three
- *  hand-built layouts that could quietly start making one look more authoritative than another.
- *
- *  `standing` is the engine's epistemic status in her words, and it is not decoration: hair
- *  cites a standard cosmetology textbook, posing cites nothing at all, and accessory advice
- *  mostly sits on a vibe read that is itself interpretation. */
+/* ---------------- AdviceCard ---------------- */
+
 function AdviceCard({
   kicker,
   standing,
@@ -1026,44 +927,39 @@ function AdviceCard({
   advice?: Advice;
   emptyLabel: string;
 }) {
+  const { colors, space, radius, type, shadows } = Theme;
+  
   if (!advice) return null;
 
-  /* Nothing to say is a real answer. An engine with no matching rule prints its own reason
-     rather than a default, which would be indistinguishable from a real suggestion. */
   if (!advice.rules.length) {
     return (
-      <View style={s.card}>
-        <Text style={s.kicker}>{kicker}</Text>
-        <Text style={s.footnote}>{advice.note ?? emptyLabel}</Text>
+      <View style={styles.card}>
+        <Text style={styles.kicker}>{kicker}</Text>
+        <Text style={styles.footnote}>{advice.note ?? emptyLabel}</Text>
       </View>
     );
   }
 
   return (
-    <View style={s.card}>
-      <Text style={s.kicker}>{kicker}</Text>
-      <Text style={s.footnote}>{standing}</Text>
+    <View style={styles.card}>
+      <Text style={styles.kicker}>{kicker}</Text>
+      <Text style={styles.footnote}>{standing}</Text>
 
       {advice.rules.map((rule) => (
-        <View key={rule.id} style={s.advice}>
-          <View style={s.rowBetween}>
-            {/* Where a rule says what it hangs off, show it. "measured undertone" and
-                "interpreted vibe" are very different amounts of ground to stand on. */}
-            <Text style={s.adviceKeyedOn}>{rule.keyed_on ?? rule.goal}</Text>
-            <Text style={s.ruleConf}>{Math.round(rule.confidence * 100)}%</Text>
+        <View key={rule.id} style={styles.advice}>
+          <View style={styles.rowBetween}>
+            <Text style={styles.adviceKeyedOn}>{rule.keyed_on ?? rule.goal}</Text>
+            <Text style={styles.ruleConf}>{Math.round(rule.confidence * 100)}%</Text>
           </View>
-          <Text style={s.adviceTxt}>{rule.recommends}</Text>
-          {rule.avoid ? <Text style={s.adviceAvoid}>Not: {rule.avoid}</Text> : null}
-          <Text style={s.ruleMeta}>{rule.reason}</Text>
-          <Text style={s.ruleMeta}>{rule.source_detail?.name}</Text>
+          <Text style={styles.adviceText}>{rule.recommends}</Text>
+          {rule.avoid ? <Text style={styles.adviceAvoid}>Not: {rule.avoid}</Text> : null}
+          <Text style={styles.ruleMeta}>{rule.reason}</Text>
+          <Text style={styles.ruleMeta}>{rule.source_detail?.name}</Text>
         </View>
       ))}
 
-      {/* Two rules can suggest opposite things — your shape says turn, the occasion says stand
-          square. The more confident one is shown; saying the other existed is more honest than
-          dropping it silently. */}
       {advice.conflicts?.map((conflict, i) => (
-        <Text key={i} style={s.conflict}>
+        <Text key={i} style={styles.conflict}>
           Your {conflict.also_matched.because.join(" and ")} suggested the opposite here:
           "{conflict.also_matched.recommends}" They disagree about {conflict.axis}, so the more
           confident one is shown.
@@ -1074,147 +970,167 @@ function AdviceCard({
 }
 
 /* ---------------- styles ---------------- */
-const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.pink },
-  scroll: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 100 },
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: Theme.colors.bg },
+  scroll: { paddingHorizontal: Theme.layout.screenPadding, paddingTop: Theme.space.md, paddingBottom: Theme.space.xxxl + Theme.layout.navHeight },
 
   topbar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  topSide: { flexDirection: "row", alignItems: "center", gap: 10, width: 74 },
-  streak: { flexDirection: "row", alignItems: "center", gap: 2 },
-  streakN: { fontWeight: "800", fontSize: 13, color: C.ink },
-  wordmark: { fontWeight: "900", fontSize: 22, letterSpacing: 2, color: C.ink },
-  bellDot: { position: "absolute", top: -1, right: 0, width: 7, height: 7, borderRadius: 4, backgroundColor: C.rose },
+  topLeft: { flexDirection: "row", alignItems: "center", gap: Theme.space.sm },
+  topRight: { flexDirection: "row", alignItems: "center", gap: Theme.space.md },
+  streak: { flexDirection: "row", alignItems: "center", gap: Theme.space.xs },
+  streakN: { fontWeight: Theme.type.weights.semibold, fontSize: Theme.type.sizes.caption, color: Theme.colors.ink },
+  wordmark: { fontWeight: Theme.type.weights.semibold, fontSize: Theme.type.sizes.title, letterSpacing: 0.5, color: Theme.colors.ink },
+  bellDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Theme.colors.accent },
 
-  week: { flexDirection: "row", justifyContent: "space-between", marginTop: 18 },
-  day: { alignItems: "center", width: 42 },
-  dayLabel: { fontSize: 9.5, fontWeight: "700", color: C.muted, letterSpacing: 0.4 },
-  dayLabelOn: { color: C.ink },
-  dayNum: { fontSize: 13, fontWeight: "600", color: C.muted, marginTop: 2 },
-  dayNumOn: { color: C.ink, fontWeight: "800" },
-  dayTile: { width: 36, height: 50, borderRadius: 9, marginTop: 6, backgroundColor: C.pink2, overflow: "hidden", flexDirection: "row", flexWrap: "wrap" },
-  dayTileGhost: { backgroundColor: C.ghost },
+  week: { flexDirection: "row", justifyContent: "space-between", marginTop: Theme.space.lg },
+  day: { alignItems: "center", width: 40 },
+  dayLabel: { fontSize: Theme.type.sizes.caption, fontWeight: Theme.type.weights.medium, color: Theme.colors.muted, letterSpacing: 0.4 },
+  dayLabelOn: { color: Theme.colors.ink },
+  dayNum: { fontSize: Theme.type.sizes.body, fontWeight: Theme.type.weights.medium, color: Theme.colors.muted, marginTop: Theme.space.xs },
+  dayNumOn: { color: Theme.colors.ink, fontWeight: Theme.type.weights.semibold },
+  dayTile: { width: 36, height: 50, borderRadius: Theme.radius.control, marginTop: Theme.space.xs, backgroundColor: Theme.colors.line, overflow: "hidden", flexDirection: "row", flexWrap: "wrap" },
+  dayTileGhost: { backgroundColor: Theme.colors.raised },
   dayChip: { width: "50%", height: "50%" },
-  dayUnderline: { width: 26, height: 2.5, borderRadius: 2, backgroundColor: C.ink, marginTop: 5 },
+  dayUnderline: { width: 24, height: 2, borderRadius: 1, backgroundColor: Theme.colors.ink, marginTop: Theme.space.xs },
 
-  askPill: { flexDirection: "row", alignItems: "center", gap: 9, backgroundColor: C.card, borderRadius: R.pill, paddingHorizontal: 16, paddingVertical: 13, marginTop: 18 },
-  askInput: { flex: 1, fontSize: 14, color: C.ink, padding: 0 },
-  askRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10, backgroundColor: C.pink, borderRadius: R.pill, paddingHorizontal: 14, paddingVertical: 9 },
-  askField: { flex: 1, fontSize: 13.5, color: C.ink, padding: 0 },
+  askPill: { flexDirection: "row", alignItems: "center", gap: Theme.space.sm, backgroundColor: Theme.colors.card, borderRadius: Theme.radius.control, paddingHorizontal: Theme.space.md, paddingVertical: Theme.space.sm, marginTop: Theme.space.md },
+  askInput: { flex: 1, fontSize: Theme.type.sizes.body, color: Theme.colors.ink, padding: 0 },
 
-  greetRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginTop: 22, gap: 14 },
-  greet: { fontWeight: "800", fontSize: 24, lineHeight: 28, color: C.ink, flexShrink: 1 },
-  vibeBox: { alignItems: "flex-end", maxWidth: 150 },
-  vibeLabel: { fontSize: 9, letterSpacing: 1.4, color: C.muted, fontWeight: "700" },
-  vibePhrase: { fontSize: 14, fontWeight: "700", color: C.ink, textAlign: "right", marginTop: 3 },
-  vibeTag: { fontSize: 9.5, color: C.muted, marginTop: 3 },
+  greetRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginTop: Theme.space.xl, gap: Theme.space.md },
+  greet: { fontWeight: Theme.type.weights.semibold, fontSize: Theme.type.sizes.headline, lineHeight: Theme.type.sizes.headline * Theme.type.lineHeights.tight, color: Theme.colors.ink, flexShrink: 1 },
+  vibeBox: { alignItems: "flex-end", maxWidth: 140 },
+  vibeLabel: { fontSize: Theme.type.sizes.caption, letterSpacing: 0.4, color: Theme.colors.muted, fontWeight: Theme.type.weights.medium },
+  vibePhrase: { fontSize: Theme.type.sizes.body, fontWeight: Theme.type.weights.semibold, color: Theme.colors.ink, textAlign: "right", marginTop: Theme.space.xs },
+  vibeTag: { fontSize: Theme.type.sizes.caption, color: Theme.colors.muted, marginTop: Theme.space.xs },
 
-  sectionLabel: { fontSize: 9.5, letterSpacing: 1.8, color: C.muted, fontWeight: "700", marginTop: 22, marginBottom: 9 },
+  sectionLabel: { fontSize: Theme.type.sizes.caption, letterSpacing: 0.4, color: Theme.colors.muted, fontWeight: Theme.type.weights.medium, marginTop: Theme.space.xl, marginBottom: Theme.space.sm },
+
   pillRow: { flexDirection: "row" },
-  pill: { paddingHorizontal: 17, paddingVertical: 8.5, borderRadius: R.pill, backgroundColor: C.card, marginRight: 8 },
-  pillOn: { backgroundColor: C.ink },
-  pillTxt: { fontSize: 13, fontWeight: "600", color: C.ink, textTransform: "capitalize" },
-  pillTxtOn: { color: "#fff" },
-  chipRow: { flexDirection: "row", marginTop: 9 },
-  chip: { paddingHorizontal: 13, paddingVertical: 6.5, borderRadius: R.pill, marginRight: 7, borderWidth: 1, borderColor: C.line },
-  chipOn: { backgroundColor: C.pink2, borderColor: C.rose },
-  chipTxt: { fontSize: 12, color: C.muted, textTransform: "capitalize" },
-  chipTxtOn: { color: C.ink, fontWeight: "700" },
+  pill: { paddingHorizontal: Theme.space.md, paddingVertical: Theme.space.xs, borderRadius: Theme.radius.control, backgroundColor: Theme.colors.card, marginRight: Theme.space.xs },
+  pillOn: { backgroundColor: Theme.colors.ink },
+  pillText: { fontSize: Theme.type.sizes.body, fontWeight: Theme.type.weights.medium, color: Theme.colors.ink, textTransform: "capitalize" },
+  pillTextOn: { color: "#fff" },
 
-  skeletonWrap: { marginTop: 20, gap: 14, alignItems: "center" },
-  skeletonRow: { flexDirection: "row", gap: 12, alignSelf: "stretch" },
-  skeleton: { flex: 1, backgroundColor: C.card, borderRadius: R.tile, opacity: 0.6 },
+  chipRow: { flexDirection: "row", marginTop: Theme.space.xs },
+  chip: { paddingHorizontal: Theme.space.sm, paddingVertical: Theme.space.xs, borderRadius: Theme.radius.control, marginRight: Theme.space.xs, borderWidth: 1, borderColor: Theme.colors.line },
+  chipOn: { backgroundColor: Theme.colors.accentSoft, borderColor: Theme.colors.accent },
+  chipText: { fontSize: Theme.type.sizes.caption, color: Theme.colors.muted, textTransform: "capitalize" },
+  chipTextOn: { color: Theme.colors.ink, fontWeight: Theme.type.weights.medium },
 
-  lookTitle: { fontWeight: "800", fontSize: 19, lineHeight: 24, color: C.ink, marginTop: 22 },
+  skeletonWrap: { marginTop: Theme.space.lg, gap: Theme.space.md, alignItems: "center" },
+  skeletonRow: { flexDirection: "row", gap: Theme.space.md, alignSelf: "stretch" },
+  skeleton: { flex: 1, backgroundColor: Theme.colors.card, borderRadius: Theme.radius.control, opacity: 0.4 },
 
-  flatlay: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 14 },
-  tile: { flexGrow: 1, flexBasis: "45%", backgroundColor: C.card, borderRadius: R.tile, padding: 10 },
-  tileImage: { borderRadius: 10, overflow: "hidden", flexDirection: "row", backgroundColor: C.pink },
+  card: { backgroundColor: Theme.colors.card, borderRadius: Theme.radius.card, padding: Theme.layout.cardPadding, marginTop: Theme.space.md, ...Theme.shadows.card },
+  cardTitle: { fontWeight: Theme.type.weights.semibold, fontSize: Theme.type.sizes.title, color: Theme.colors.ink, marginBottom: Theme.space.sm },
+
+  lookTitle: { fontWeight: Theme.type.weights.semibold, fontSize: Theme.type.sizes.title, lineHeight: Theme.type.sizes.title * Theme.type.lineHeights.tight, color: Theme.colors.ink, marginTop: Theme.space.lg },
+
+  flatlay: { flexDirection: "row", flexWrap: "wrap", gap: Theme.space.md, marginTop: Theme.space.md },
+  tile: { flexGrow: 1, flexBasis: "45%", backgroundColor: Theme.colors.card, borderRadius: Theme.radius.control, padding: Theme.space.sm },
+  tileImage: { borderRadius: Theme.radius.control, overflow: "hidden", flexDirection: "row", backgroundColor: Theme.colors.raised },
   tileImg: { width: "100%", height: "100%" },
   tileBand: { flex: 1 },
-  tileSlot: { fontSize: 9, letterSpacing: 1.4, textTransform: "uppercase", color: C.roseDark, fontWeight: "700", marginTop: 9 },
-  tileName: { fontSize: 12.5, lineHeight: 17, color: C.ink, fontWeight: "600", marginTop: 2 },
-  tilePrice: { fontSize: 11.5, color: C.ink, marginTop: 4, fontWeight: "600" },
-  buyBtn: { marginTop: 8, backgroundColor: C.ink, borderRadius: R.pill, paddingVertical: 7, alignItems: "center" },
-  buyTxt: { color: "#fff", fontSize: 12, fontWeight: "700" },
-  asSearched: { fontSize: 9.5, color: C.muted, marginTop: 6, fontStyle: "italic" },
-  attrRow: { flexDirection: "row", flexWrap: "wrap", gap: 5, marginTop: 7 },
-  attrChip: { backgroundColor: C.pink, borderRadius: R.pill, paddingHorizontal: 8, paddingVertical: 3 },
-  attrTxt: { fontSize: 9.5, color: C.ink, fontWeight: "600" },
+  tileSlot: { fontSize: Theme.type.sizes.caption, letterSpacing: 0.4, textTransform: "uppercase", color: Theme.colors.accent, fontWeight: Theme.type.weights.medium, marginTop: Theme.space.xs },
+  tileName: { fontSize: Theme.type.sizes.body, lineHeight: Theme.type.sizes.body * Theme.type.lineHeights.relaxed, color: Theme.colors.ink, fontWeight: Theme.type.weights.medium, marginTop: Theme.space.xs },
 
-  blackBtnWide: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: C.ink, borderRadius: R.pill, paddingVertical: 14, marginTop: 16 },
-  blackBtn: { alignSelf: "flex-start", backgroundColor: C.ink, borderRadius: R.pill, paddingHorizontal: 18, paddingVertical: 9, marginTop: 12 },
-  blackBtnTxt: { color: "#fff", fontSize: 13.5, fontWeight: "700" },
-  promptTxt: { fontSize: 12.5, lineHeight: 19, color: C.ink, marginTop: 9 },
+  attrRow: { flexDirection: "row", flexWrap: "wrap", gap: Theme.space.xs, marginTop: Theme.space.xs },
+  attrChip: { backgroundColor: Theme.colors.raised, borderRadius: Theme.radius.keycap, paddingHorizontal: Theme.space.xs, paddingVertical: 2 },
+  attrText: { fontSize: Theme.type.sizes.caption, color: Theme.colors.muted },
 
-  divider: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 26 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: C.line },
-  dividerTxt: { color: C.muted, fontSize: 12.5 },
+  tilePrice: { fontSize: Theme.type.sizes.body, color: Theme.colors.ink, fontWeight: Theme.type.weights.medium, marginTop: Theme.space.xs },
+  buyBtn: { backgroundColor: Theme.colors.ink, borderRadius: Theme.radius.keycap, paddingHorizontal: Theme.space.sm, paddingVertical: Theme.space.xs, marginTop: Theme.space.xs, alignSelf: "flex-start" },
+  buyText: { fontSize: Theme.type.sizes.caption, color: "#fff", fontWeight: Theme.type.weights.medium },
+  asSearched: { fontSize: Theme.type.sizes.caption, color: Theme.colors.quiet, marginTop: Theme.space.xs },
 
-  card: { backgroundColor: C.card, borderRadius: R.card, padding: 17, marginTop: 14 },
-  dissentCard: { backgroundColor: C.warnBg },
-  cardTitle: { fontWeight: "800", fontSize: 15.5, color: C.ink },
-  rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  kicker: { fontSize: 9.5, letterSpacing: 1.6, textTransform: "uppercase", color: C.roseDark, fontWeight: "700" },
-  badge: { fontSize: 9.5, color: C.muted },
-  reason: { fontSize: 14, lineHeight: 21, color: C.ink, marginTop: 9 },
-  footnote: { fontSize: 11, lineHeight: 16.5, color: C.muted, marginTop: 9 },
-  poolNote: { fontSize: 11, lineHeight: 16.5, color: C.muted, marginTop: 12, paddingHorizontal: 4 },
+  secondaryBtnWide: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: Theme.space.xs, backgroundColor: Theme.colors.raised, borderWidth: 1, borderColor: Theme.colors.line, borderRadius: Theme.radius.control, paddingVertical: Theme.space.sm, marginTop: Theme.space.md },
+  secondaryBtnText: { color: Theme.colors.ink, fontSize: Theme.type.sizes.body, fontWeight: Theme.type.weights.medium },
 
-  voteRow: { flexDirection: "row", gap: 10, marginTop: 15 },
-  vote: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderRadius: R.pill, borderWidth: 1, borderColor: C.line, paddingVertical: 11 },
-  voteOn: { backgroundColor: C.pink2, borderColor: C.rose },
-  voteEmoji: { fontSize: 14 },
-  voteTxt: { fontSize: 12.5, color: C.ink, fontWeight: "600" },
+  promptOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: Theme.colors.overlay, zIndex: Theme.zIndex.modal, justifyContent: "center", alignItems: "center", padding: Theme.space.lg },
+  promptCard: { backgroundColor: Theme.colors.card, borderRadius: Theme.radius.panel, padding: Theme.space.xl, width: "100%", maxWidth: 400, ...Theme.shadows.floating },
+  promptHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: Theme.space.md },
+  promptText: { fontSize: Theme.type.sizes.body, color: Theme.colors.ink, marginTop: Theme.space.md, fontFamily: "monospace", lineHeight: Theme.type.sizes.body * Theme.type.lineHeights.relaxed },
 
-  swatchWrap: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginTop: 13 },
-  swatchCol: { width: 50, alignItems: "center" },
-  swatch: { width: 36, height: 36, borderRadius: 10 },
-  swatchName: { fontSize: 8.5, color: C.muted, marginTop: 4, textAlign: "center" },
-  guidance: { fontSize: 12.5, lineHeight: 19, color: C.ink, marginTop: 13 },
+  divider: { flexDirection: "row", alignItems: "center", gap: Theme.space.md, marginTop: Theme.space.xl, marginBottom: Theme.space.md },
+  dividerLine: { flex: 1, height: 1, backgroundColor: Theme.colors.line },
+  dividerText: { fontSize: Theme.type.sizes.caption, letterSpacing: 0.4, textTransform: "uppercase", color: Theme.colors.muted, fontWeight: Theme.type.weights.medium },
 
-  readLine: { fontSize: 15, fontWeight: "700", color: C.ink, marginTop: 9, textTransform: "capitalize" },
-  hr: { height: 1, backgroundColor: C.line, marginVertical: 15 },
-  borderline: { backgroundColor: C.warnBg, borderRadius: 12, padding: 11, marginTop: 10 },
-  borderlineTitle: { fontSize: 11, fontWeight: "700", color: C.warn },
-  borderlineTxt: { fontSize: 11, lineHeight: 16.5, color: C.warn, marginTop: 4 },
-  estimate: { backgroundColor: C.warnBg, borderRadius: 12, padding: 12, marginTop: 12 },
-  estimateTitle: { fontSize: 11, fontWeight: "700", color: C.warn },
-  estimateLine: { fontSize: 12, color: C.ink, marginTop: 5, textTransform: "capitalize" },
-  estimateNote: { fontSize: 10.5, lineHeight: 15.5, color: C.warn, marginTop: 8 },
+  rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
 
-  advice: { marginTop: 13, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.line },
-  adviceKeyedOn: { fontSize: 9, letterSpacing: 1.2, textTransform: "uppercase", color: C.muted, fontWeight: "700", flexShrink: 1, marginRight: 8 },
-  adviceTxt: { fontSize: 13.5, lineHeight: 19, color: C.ink, fontWeight: "600", marginTop: 6 },
-  adviceAvoid: { fontSize: 12, lineHeight: 17, color: C.muted, marginTop: 4 },
-  conflict: { fontSize: 10.5, lineHeight: 15.5, color: C.warn, backgroundColor: C.warnBg, borderRadius: 10, padding: 9, marginTop: 12 },
+  kicker: { fontSize: Theme.type.sizes.caption, letterSpacing: 0.4, textTransform: "uppercase", color: Theme.colors.muted, fontWeight: Theme.type.weights.medium, marginBottom: Theme.space.xs },
+  badge: { fontSize: Theme.type.sizes.caption, color: Theme.colors.accent, fontWeight: Theme.type.weights.medium },
+  reason: { fontSize: Theme.type.sizes.body, lineHeight: Theme.type.sizes.body * Theme.type.lineHeights.relaxed, color: Theme.colors.ink, marginTop: Theme.space.xs },
 
-  features: { marginTop: 12 },
-  featureRow: { marginTop: 9 },
-  featureGroup: { fontSize: 9, letterSpacing: 1.2, textTransform: "uppercase", color: C.roseDark, fontWeight: "700" },
-  featureChips: { flexDirection: "row", flexWrap: "wrap", gap: 5, marginTop: 5 },
-  featureChip: { backgroundColor: C.pink, borderRadius: R.pill, paddingHorizontal: 8, paddingVertical: 3 },
-  featureChipDead: { backgroundColor: "transparent", borderWidth: 1, borderColor: C.line },
-  featureTxt: { fontSize: 9.5, color: C.ink },
-  featureTxtDead: { color: C.muted, textDecorationLine: "line-through" },
+  voteRow: { flexDirection: "row", gap: Theme.space.md, marginTop: Theme.space.md },
+  vote: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: Theme.space.xs, backgroundColor: Theme.colors.raised, borderWidth: 1, borderColor: Theme.colors.line, borderRadius: Theme.radius.control, paddingVertical: Theme.space.sm },
+  voteOn: { backgroundColor: Theme.colors.accentSoft, borderColor: Theme.colors.accent },
+  voteText: { fontSize: Theme.type.sizes.body, fontWeight: Theme.type.weights.medium, color: Theme.colors.ink },
+  voteTextOn: { color: Theme.colors.accent },
 
-  rule: { marginTop: 13, paddingTop: 11, borderTopWidth: 1, borderTopColor: C.line },
-  ruleAttr: { fontSize: 9.5, letterSpacing: 1.4, textTransform: "uppercase", color: C.muted, fontWeight: "700" },
-  ruleConf: { fontSize: 11, color: C.roseDark, fontWeight: "700" },
-  ruleTxt: { fontSize: 12.5, lineHeight: 18, color: C.ink, marginTop: 5 },
-  ruleMeta: { fontSize: 10, color: C.muted, marginTop: 5 },
+  swatchWrap: { flexDirection: "row", flexWrap: "wrap", gap: Theme.space.sm, marginTop: Theme.space.sm },
+  swatchCol: { width: 48, alignItems: "center" },
+  swatch: { width: 36, height: 36, borderRadius: Theme.radius.control, marginBottom: Theme.space.xs, borderWidth: 1, borderColor: Theme.colors.line },
+  swatchName: { fontSize: Theme.type.sizes.micro, color: Theme.colors.muted, textAlign: "center", width: 44 },
 
-  nav: { position: "absolute", bottom: 0, left: 0, right: 0, height: 76, backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.line, flexDirection: "row", justifyContent: "space-around", alignItems: "center", paddingBottom: 10 },
-  navProfileBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: C.ink, alignItems: "center", justifyContent: "center" },
-  navPlus: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.ink, alignItems: "center", justifyContent: "center" },
-  navAvatar: { width: 27, height: 27, borderRadius: 14 },
-  navAvatarEmpty: { width: 27, height: 27, borderRadius: 14, backgroundColor: C.ink, alignItems: "center", justifyContent: "center" },
-  navAvatarTxt: { color: "#fff", fontSize: 11, fontWeight: "700" },
+  guidance: { fontSize: Theme.type.sizes.body, lineHeight: Theme.type.sizes.body * Theme.type.lineHeights.relaxed, color: Theme.colors.muted, marginTop: Theme.space.sm },
 
-  toolRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
-  toolBtn: { flex: 1, minWidth: 70, backgroundColor: C.card, borderWidth: 1, borderColor: C.line, borderRadius: R.pill, paddingVertical: 10, alignItems: "center" },
-  toolBtnTxt: { fontSize: 10, fontWeight: "700", color: C.ink, textTransform: "uppercase", letterSpacing: 0.8 },
-  toolResult: { backgroundColor: "#fff", borderRadius: 12, padding: 12, marginTop: 10 },
-  toolResultTitle: { fontWeight: "800", fontSize: 14, color: C.ink, marginBottom: 4 },
-  toolResultText: { fontSize: 12, color: C.muted, marginBottom: 4 },
-  toolResultReason: { fontSize: 10, color: C.ink, marginTop: 2, lineHeight: 15 },
+  readLine: { fontSize: Theme.type.sizes.bodyLarge, fontWeight: Theme.type.weights.medium, color: Theme.colors.ink, marginTop: Theme.space.sm },
+  footnote: { fontSize: Theme.type.sizes.caption, color: Theme.colors.muted, lineHeight: Theme.type.sizes.caption * Theme.type.lineHeights.relaxed, marginTop: Theme.space.xs },
+
+  borderline: { backgroundColor: Theme.colors.accentSoft, borderRadius: Theme.radius.control, padding: Theme.space.sm, marginTop: Theme.space.sm },
+  borderlineTitle: { fontSize: Theme.type.sizes.caption, fontWeight: Theme.type.weights.semibold, color: Theme.colors.ink, marginBottom: Theme.space.xs },
+  borderlineText: { fontSize: Theme.type.sizes.caption, color: Theme.colors.muted, lineHeight: Theme.type.sizes.caption * Theme.type.lineHeights.relaxed },
+
+  hr: { height: 1, backgroundColor: Theme.colors.line, marginVertical: Theme.space.md },
+
+  estimate: { marginTop: Theme.space.md },
+  estimateTitle: { fontSize: Theme.type.sizes.caption, fontWeight: Theme.type.weights.semibold, color: Theme.colors.ink, marginBottom: Theme.space.xs },
+  estimateLine: { fontSize: Theme.type.sizes.body, color: Theme.colors.ink, marginBottom: Theme.space.xs },
+  estimateNote: { fontSize: Theme.type.sizes.caption, color: Theme.colors.muted, marginTop: Theme.space.xs, lineHeight: Theme.type.sizes.caption * Theme.type.lineHeights.relaxed },
+
+  rule: { paddingVertical: Theme.space.sm, borderTopWidth: 1, borderTopColor: Theme.colors.line },
+  ruleAttr: { fontSize: Theme.type.sizes.body, fontWeight: Theme.type.weights.medium, color: Theme.colors.ink },
+  ruleConf: { fontSize: Theme.type.sizes.body, fontWeight: Theme.type.weights.medium, color: Theme.colors.accent, fontVariant: ["tabular-nums"] },
+  ruleText: { fontSize: Theme.type.sizes.body, color: Theme.colors.ink, marginTop: Theme.space.xs },
+  ruleMeta: { fontSize: Theme.type.sizes.caption, color: Theme.colors.muted, marginTop: Theme.space.xs },
+
+  dissentCard: { borderWidth: 1, borderColor: Theme.colors.accent, backgroundColor: Theme.colors.accentSoft },
+  poolNote: { fontSize: Theme.type.sizes.caption, color: Theme.colors.muted, marginTop: Theme.space.md, lineHeight: Theme.type.sizes.caption * Theme.type.lineHeights.relaxed },
+
+  askRow: { flexDirection: "row", alignItems: "center", gap: Theme.space.xs, marginTop: Theme.space.sm, backgroundColor: Theme.colors.raised, borderRadius: Theme.radius.control, paddingHorizontal: Theme.space.sm, paddingVertical: Theme.space.xs },
+  askField: { flex: 1, fontSize: Theme.type.sizes.body, color: Theme.colors.ink, padding: 0 },
+
+  toolRow: { flexDirection: "row", flexWrap: "wrap", gap: Theme.space.xs, marginTop: Theme.space.md },
+  toolBtn: { backgroundColor: Theme.colors.raised, borderWidth: 1, borderColor: Theme.colors.line, borderRadius: Theme.radius.control, paddingHorizontal: Theme.space.md, paddingVertical: Theme.space.sm },
+  toolBtnText: { fontSize: Theme.type.sizes.body, color: Theme.colors.ink, fontWeight: Theme.type.weights.medium },
+  toolResult: { marginTop: Theme.space.md, padding: Theme.space.md, backgroundColor: Theme.colors.raised, borderRadius: Theme.radius.control },
+  toolResultTitle: { fontWeight: Theme.type.weights.semibold, fontSize: Theme.type.sizes.body, color: Theme.colors.ink, marginBottom: Theme.space.xs },
+  toolResultText: { fontSize: Theme.type.sizes.body, color: Theme.colors.muted, lineHeight: Theme.type.sizes.body * Theme.type.lineHeights.relaxed },
+  toolResultReason: { fontSize: Theme.type.sizes.caption, color: Theme.colors.muted, marginTop: Theme.space.xs },
+
+  features: { marginTop: Theme.space.sm },
+  featureRow: { marginBottom: Theme.space.sm },
+  featureGroup: { fontSize: Theme.type.sizes.caption, fontWeight: Theme.type.weights.medium, color: Theme.colors.muted, marginBottom: Theme.space.xs },
+  featureChips: { flexDirection: "row", flexWrap: "wrap", gap: Theme.space.xs },
+  featureChip: { backgroundColor: Theme.colors.raised, borderRadius: Theme.radius.keycap, paddingHorizontal: Theme.space.xs, paddingVertical: 2 },
+  featureChipDead: { opacity: 0.4 },
+  featureText: { fontSize: Theme.type.sizes.micro, color: Theme.colors.ink },
+  featureTextDead: { textDecorationLine: "line-through", color: Theme.colors.quiet },
+
+  primaryBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: Theme.space.xs, backgroundColor: Theme.colors.ink, borderRadius: Theme.radius.control, paddingVertical: Theme.space.md },
+  primaryBtnText: { color: "#fff", fontSize: Theme.type.sizes.body, fontWeight: Theme.type.weights.medium },
+
+  advice: { marginTop: Theme.space.sm, paddingTop: Theme.space.sm, borderTopWidth: 1, borderTopColor: Theme.colors.line },
+  adviceKeyedOn: { fontSize: Theme.type.sizes.caption, color: Theme.colors.accent, fontWeight: Theme.type.weights.medium },
+  adviceText: { fontSize: Theme.type.sizes.body, color: Theme.colors.ink, marginTop: Theme.space.xs },
+  adviceAvoid: { fontSize: Theme.type.sizes.caption, color: Theme.colors.negative, marginTop: Theme.space.xs },
+  conflict: { fontSize: Theme.type.sizes.caption, color: Theme.colors.muted, marginTop: Theme.space.sm, lineHeight: Theme.type.sizes.caption * Theme.type.lineHeights.relaxed },
+
+  nav: { position: "absolute", bottom: 0, left: 0, right: 0, height: Theme.layout.navHeight, flexDirection: "row", alignItems: "center", justifyContent: "space-around", backgroundColor: Theme.colors.card, borderTopWidth: 1, borderTopColor: Theme.colors.line },
+  navPlus: { width: 48, height: 48, borderRadius: 24, backgroundColor: Theme.colors.ink, alignItems: "center", justifyContent: "center", marginBottom: Theme.space.md },
+  navAvatar: { width: 32, height: 32, borderRadius: 16 },
+  navAvatarEmpty: { width: 32, height: 32, borderRadius: 16, backgroundColor: Theme.colors.ink, alignItems: "center", justifyContent: "center" },
+  navAvatarText: { fontSize: Theme.type.sizes.bodyLarge, fontWeight: Theme.type.weights.semibold, color: "#fff" },
+  navProfileBtn: { position: "absolute", right: Theme.space.md, width: 40, height: 40, alignItems: "center", justifyContent: "center" },
 });

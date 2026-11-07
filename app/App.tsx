@@ -10,7 +10,8 @@
  * EXPO_PUBLIC_ALTIER_API points at the Mac's address on your wifi.
  */
 import React, { useState } from "react";
-import { SafeAreaView, StatusBar, StyleSheet } from "react-native";
+import { StatusBar, StyleSheet } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import OnboardingScreen from "./screens/OnboardingScreen";
 import TodayScreen from "./screens/TodayScreen";
@@ -23,7 +24,7 @@ export default function App() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
 
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaProvider>
       <StatusBar barStyle="dark-content" />
       {screen === "onboarding" ? (
         <OnboardingScreen
@@ -42,10 +43,8 @@ export default function App() {
           onProfile={() => setScreen("profile")}
         />
       )}
-    </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#FBECF1" },
-});
+const styles = StyleSheet.create({});
